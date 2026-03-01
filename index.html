@@ -2,26 +2,23 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Tactical Geospatial HUD</title>
+    <title>Sentry Node | GPS Data Plotter</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        body { margin: 0; background: #020406; overflow: hidden; font-family: 'Courier New', monospace; }
+        body { margin: 0; background: #020406; overflow: hidden; font-family: monospace; }
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
-        #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid rgba(0, 255, 204, 0.3); 
-               background: rgba(0,10,10,0.85); padding: 15px; z-index: 100; pointer-events: none; 
-               box-shadow: 0 0 15px rgba(0, 255, 204, 0.2); border-radius: 4px; }
-        .glitch { animation: glitch 2s infinite; font-weight: bold; letter-spacing: 2px; }
-        @keyframes glitch { 0% { opacity: 1; } 50% { opacity: 0.7; } 100% { opacity: 1; } }
-        #coords { font-size: 12px; color: #008888; margin-top: 5px; }
+        #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
+               background: rgba(0,15,15,0.9); padding: 15px; z-index: 100; pointer-events: none; }
+        .stat { font-size: 11px; color: #008888; margin-top: 4px; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div class="glitch">SYSTEM: SENTRY_ACTIVE_NODE_V3</div>
-    <div id="status">GEOSPATIAL LINK: SECURE</div>
-    <div id="coords">LAT: --.------ | LON: --.------</div>
+    <div style="font-weight: bold; letter-spacing: 1px;">SENTRY_TRACKER_V4</div>
+    <div id="coords">WAITING FOR GPS...</div>
+    <div class="stat" id="nodes">NODES PLOTTED: 0</div>
 </div>
 
 <div id="map-buffer"></div>
@@ -38,42 +35,38 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     // --- 1. GEOSPATIAL ENGINE ---
+    let startCoords = null;
     const map = new maplibregl.Map({
         container: 'map-buffer',
-        style: 'https://demotiles.maplibre.org/style.json', // Vector style for sharp floor
+        style: 'https://demotiles.maplibre.org/style.json',
         center: [-81.6881, 26.2750], 
-        zoom: 17.5,
+        zoom: 18,
         interactive: false,
         preserveDrawingBuffer: true 
     });
 
-    // --- 2. THREE.JS TACTICAL SCENE ---
+    // --- 2. THREE.JS SCENE ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x020406, 0.015);
+    scene.background = new THREE.Color(0x020406);
+    
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
+    camera.position.set(20, 30, 40);
 
-    const camera = new THREE.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(30, 40, 50);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
-    renderer.setPixelRatio(window.devicePixelRatio);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
-    controls.maxPolarAngle = Math.PI / 2.1; 
 
-    // Lighting
-    const ambLight = new THREE.AmbientLight(0x404040, 1); 
-    scene.add(ambLight);
-    const spotLight = new THREE.SpotLight(0x00ffcc, 2);
-    spotLight.position.set(20, 50, 20);
-    scene.add(spotLight);
+    // Lighting for Solid Objects
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const sun = new THREE.DirectionalLight(0xffffff, 1);
+    sun.position.set(10, 20, 10);
+    scene.add(sun);
 
-    // --- 3. DYNAMIC WORLD FLOOR ---
+    // --- 3. THE SYNCED FLOOR ---
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
-    mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
-    
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(200, 200),
         new THREE.MeshBasicMaterial({ map: mapTex })
@@ -81,82 +74,82 @@
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // Grid Overlay for "Digital" feel
-    const grid = new THREE.GridHelper(200, 40, 0x00ffcc, 0x002222);
-    grid.position.y = 0.05;
-    scene.add(grid);
-
-    // --- 4. ADVANCED SENTRY & RADAR ---
-    const sentryNode = new THREE.Group();
-    scene.add(sentryNode);
-
-    // Solid Triangle (Pyramid) with MeshPhong for better highlights
+    // --- 4. THE SENTRY (TRIANGLE) ---
+    const sentry = new THREE.Group();
     const pyramid = new THREE.Mesh(
-        new THREE.CylinderGeometry(0, 2, 4, 4),
-        new THREE.MeshPhongMaterial({ 
-            color: 0x00ffcc, 
-            flatShading: true, 
-            shininess: 100, 
-            emissive: 0x003322 
-        })
+        new THREE.CylinderGeometry(0, 1.5, 3, 4),
+        new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true })
     );
     pyramid.rotation.x = Math.PI; 
-    sentryNode.add(pyramid);
+    sentry.add(pyramid);
 
-    // Dual Pulse Radar System
-    const createRing = (radius) => {
-        const ring = new THREE.Mesh(
-            new THREE.RingGeometry(radius, radius + 0.5, 64),
-            new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, side: THREE.DoubleSide })
-        );
-        ring.rotation.x = -Math.PI / 2;
-        ring.position.y = 0.2;
-        return ring;
-    };
+    // Pulsing Ring (Scaling version)
+    const ring = new THREE.Mesh(
+        new THREE.RingGeometry(2, 2.3, 64),
+        new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, side: THREE.DoubleSide })
+    );
+    ring.rotation.x = -Math.PI / 2;
+    sentry.add(ring);
+    scene.add(sentry);
 
-    const ringA = createRing(3);
-    const ringB = createRing(3);
-    sentryNode.add(ringA, ringB);
+    // --- 5. DATA COLLECTION: BREADCRUMBS ---
+    const breadcrumbs = new THREE.Group();
+    scene.add(breadcrumbs);
 
-    // --- 5. GPS DATA SYNC ---
+    const sphereGeo = new THREE.SphereGeometry(0.4, 16, 16);
+    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0x330000 });
+
+    function dropBreadcrumb(lat, lon) {
+        if (!startCoords) {
+            startCoords = { lat, lon };
+            return;
+        }
+
+        // Calculate relative position (approximate meters)
+        // 1 degree lat is ~111,111 meters. 1 degree lon is ~111,111 * cos(lat).
+        const dy = (lat - startCoords.lat) * 111111;
+        const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
+
+        const node = new THREE.Mesh(sphereGeo, sphereMat);
+        // Note: dy is mapped to -Z in Three.js coordinates
+        node.position.set(dx, 0.5, -dy); 
+        breadcrumbs.add(node);
+        
+        document.getElementById('nodes').innerText = `NODES PLOTTED: ${breadcrumbs.children.length}`;
+    }
+
+    // --- 6. GPS WATCH ---
     if ("geolocation" in navigator) {
         navigator.geolocation.watchPosition(pos => {
             const { latitude, longitude } = pos.coords;
-            document.getElementById('coords').innerText = `LAT: ${latitude.toFixed(6)} | LON: ${longitude.toFixed(6)}`;
+            document.getElementById('coords').innerText = `LAT: ${latitude.toFixed(6)} LON: ${longitude.toFixed(6)}`;
+            
             map.setCenter([longitude, latitude]);
+            dropBreadcrumb(latitude, longitude);
+
         }, null, { enableHighAccuracy: true });
     }
 
-    // --- 6. RENDER LOOP (Advanced Animation) ---
-    const clock = new THREE.Clock();
-
+    // --- 7. ANIMATION ---
     function animate() {
         requestAnimationFrame(animate);
-        const elapsed = clock.getElapsedTime();
+        const time = Date.now() * 0.001;
 
-        // Sync floor map
         if (map.loaded()) mapTex.needsUpdate = true;
 
-        // Sentry: Bobbing and Floating
-        sentryNode.position.y = 5 + Math.sin(elapsed * 2) * 1.5;
-        sentryNode.rotation.y += 0.01;
+        // Bob & Spin
+        sentry.position.y = 2 + Math.sin(time * 3) * 0.5;
+        sentry.rotation.y += 0.01;
 
-        // Radar Pulse A: Growing Big to Small
-        const pulseA = (Math.sin(elapsed * 3) + 1) / 2; // 0 to 1
-        const scaleA = 0.5 + (pulseA * 4);
-        ringA.scale.set(scaleA, scaleA, 1);
-        ringA.material.opacity = 1 - (pulseA);
-
-        // Radar Pulse B: Offset pulse for complex feel
-        const pulseB = (Math.sin(elapsed * 3 + Math.PI) + 1) / 2;
-        const scaleB = 0.5 + (pulseB * 4);
-        ringB.scale.set(scaleB, scaleB, 1);
-        ringB.material.opacity = 1 - (pulseB);
+        // Scaling Pulse Ring
+        const pulse = (Math.sin(time * 5) + 1) / 2;
+        const s = 0.5 + (pulse * 1.5);
+        ring.scale.set(s, s, 1);
+        ring.material.opacity = 1 - pulse;
 
         controls.update();
         renderer.render(scene, camera);
     }
-
     animate();
 
     window.addEventListener('resize', () => {
