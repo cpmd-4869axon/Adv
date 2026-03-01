@@ -2,27 +2,25 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V75 Aegis Protocol</title>
+    <title>Sentry OS | V76 Tactical Labels</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
         :root { --neon: #00ffcc; --warning: #ffcc00; --alert: #ff0055; --bg: #000808; }
         body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
         
-        /* CRT Interlace */
         body::after {
             content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
             z-index: 1000; background-size: 100% 3px; pointer-events: none; opacity: 0.3;
         }
 
-        #map-buffer { position: absolute; width: 512px; height: 512px; top: -9999px; visibility: hidden; }
+        /* Increased resolution for label clarity */
+        #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
         .panel { border: 1px solid var(--neon); backdrop-filter: blur(8px); background: rgba(0, 10, 10, 0.9); box-shadow: 0 0 15px rgba(0,255,204,0.2); }
         #hud { position: absolute; top: 20px; left: 20px; padding: 15px; z-index: 100; width: 320px; border-top: 4px solid var(--neon); }
         
-        #mini-map { position: absolute; bottom: 30px; right: 30px; width: 200px; height: 200px; z-index: 100; border: 2px solid var(--neon); border-radius: 4px; overflow: hidden; }
-
         .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 15px; }
         button { background: #001515; color: var(--neon); border: 1px solid #004444; padding: 10px; cursor: pointer; font-size: 10px; font-weight: bold; transition: 0.2s; }
         button:hover { background: var(--neon); color: #000; }
@@ -35,8 +33,8 @@
 <body>
 
 <div id="hud" class="panel">
-    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_PROTO_V75</div>
-    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">UPLINK: ACTIVE_ENCRYPTION</div>
+    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_LABELS_V76</div>
+    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">INTEL_LAYER: ENABLED</div>
     
     <div id="compass">N</div>
     
@@ -49,12 +47,10 @@
     <div class="telemetry">
         NODES: <span id="node-count" style="color:white;">0</span> | 
         PITCH: <span id="cam-pitch" style="color:white;">45.0</span><br>
-        LAT: <span id="lat-val" style="color:white;">---</span> | 
-        LON: <span id="lon-val" style="color:white;">---</span>
+        INTEL: <span style="color:var(--neon);">STREET_LEVEL_LABELS_ON</span>
     </div>
 </div>
 
-<div id="mini-map"></div>
 <div id="map-buffer"></div>
 
 <script type="importmap">
@@ -76,17 +72,16 @@
     const targetCamPos = new THREE.Vector3();
     const targetLookAt = new THREE.Vector3();
 
-    // Map Engine
+    // Map Engine with Label Optimization
     const map = new maplibregl.Map({
         container: 'map-buffer',
-        style: 'https://tiles.openfreemap.org/styles/dark',
-        center: [-81.6881, 26.2750], zoom: 18, interactive: false, preserveDrawingBuffer: true 
+        style: 'https://tiles.openfreemap.org/styles/dark', // Dark style includes label layers
+        center: [-81.6881, 26.2750], 
+        zoom: 18.5, // Tighter zoom makes labels larger on the radar
+        interactive: false, 
+        preserveDrawingBuffer: true 
     });
-    const miniMap = new maplibregl.Map({
-        container: 'mini-map',
-        style: 'https://tiles.openfreemap.org/styles/dark',
-        center: [-81.6881, 26.2750], zoom: 15, interactive: false
-    });
+
     map.on('idle', () => { mapLoaded = true; });
 
     // Scene Setup
@@ -108,29 +103,28 @@
     light.position.set(0, 800, 0);
     scene.add(light);
 
-    // --- FIX: MULTI-LAYER FLOOR SYSTEM ---
-    // 1. PHYSICAL GRID FLOOR
-    const floorGeometry = new THREE.PlaneGeometry(10000, 10000);
-    const floorMaterial = new THREE.MeshStandardMaterial({ color: 0x000505, roughness: 1 });
-    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    // Physical Grid Floor
+    const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(10000, 10000),
+        new THREE.MeshStandardMaterial({ color: 0x000505, roughness: 1 })
+    );
     floor.rotation.x = -Math.PI / 2;
-    floor.position.y = -5; // Lowered to avoid Z-fighting
+    floor.position.y = -5;
     scene.add(floor);
 
     const grid = new THREE.GridHelper(10000, 50, 0x002222, 0x001111);
     grid.position.y = -4;
     scene.add(grid);
 
-    // 2. TACTICAL OVERLAY PLANE (Follows Sentry)
+    // Tactical Overlay Plane (Higher Res for Text)
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
-    const tacticalGeometry = new THREE.CircleGeometry(800, 64); // Circular radar look
-    const tacticalMaterial = new THREE.MeshBasicMaterial({ 
-        map: mapTex, 
-        transparent: true, 
-        opacity: 0.8,
-        side: THREE.DoubleSide
-    });
-    const tacticalPlane = new THREE.Mesh(tacticalGeometry, tacticalMaterial);
+    mapTex.minFilter = THREE.LinearFilter;
+    mapTex.magFilter = THREE.LinearFilter;
+
+    const tacticalPlane = new THREE.Mesh(
+        new THREE.CircleGeometry(1000, 64), 
+        new THREE.MeshBasicMaterial({ map: mapTex, transparent: true, opacity: 0.85 })
+    );
     tacticalPlane.rotation.x = -Math.PI / 2;
     tacticalPlane.position.y = 0;
     scene.add(tacticalPlane);
@@ -143,7 +137,7 @@
     sentry.position.y = 60;
     scene.add(sentry);
 
-    // Neural Path (Trail)
+    // Neural Path
     const trailGeom = new THREE.BufferGeometry();
     const trailMat = new THREE.LineBasicMaterial({ color: 0xff0044, linewidth: 3 });
     const trailLine = new THREE.Line(trailGeom, trailMat);
@@ -157,20 +151,14 @@
         pathPoints.push(new THREE.Vector3(x, 2, z));
         trailGeom.setFromPoints(pathPoints);
         
-        // Follow Logic
         sentry.position.set(x, sentry.position.y, z);
-        tacticalPlane.position.set(x, 0, z); // Move map with Sentry
+        tacticalPlane.position.set(x, 0, z); 
         light.position.set(x, 600, z);
         
-        miniMap.setCenter([lon, lat]);
         map.setCenter([lon, lat]);
-
         document.getElementById('node-count').innerText = pathPoints.length;
-        document.getElementById('lat-val').innerText = lat.toFixed(5);
-        document.getElementById('lon-val').innerText = lon.toFixed(5);
     }
 
-    // Interaction
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
