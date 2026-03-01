@@ -2,118 +2,139 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V81 Matrix Fix</title>
+    <title>Aegis Matrix | V85 Advanced</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        :root { --neon: #00ffcc; --bg: #000808; }
-        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; }
+        :root { --neon: #00ffcc; --alert: #ff0055; --bg: #000808; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Segoe UI', monospace; }
         
-        /* Hidden master canvas for the 3x3 projection */
-        #buffer-container { position: absolute; top: -9999px; left: -9999px; }
-        #master-canvas { width: 1536px; height: 1536px; }
-
-        .panel { border: 1px solid var(--neon); backdrop-filter: blur(8px); background: rgba(0, 10, 10, 0.9); position: absolute; z-index: 100; padding: 15px; }
-        #hud { top: 20px; left: 20px; width: 320px; border-top: 4px solid var(--neon); }
-        .telemetry { font-size: 10px; color: var(--neon); margin-top: 10px; border-top: 1px solid #003333; padding-top: 5px; }
+        /* Tactical HUD - Neural Aesthetics */
+        .hud-container {
+            position: absolute; top: 20px; left: 20px; z-index: 1000;
+            padding: 20px; border-left: 4px solid var(--neon);
+            background: linear-gradient(90deg, rgba(0,20,20,0.9) 0%, transparent 100%);
+            color: var(--neon); text-transform: uppercase; pointer-events: none;
+        }
+        .glitch-text { font-size: 24px; font-weight: 900; letter-spacing: 5px; text-shadow: 2px 2px var(--alert); }
+        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; font-size: 10px; opacity: 0.8; }
+        
+        /* Map Buffer */
+        #map-engine { width: 1024px; height: 1024px; position: absolute; top: -9999px; }
     </style>
 </head>
 <body>
 
-<div id="hud" class="panel">
-    <div style="font-weight: bold; letter-spacing: 2px; color:white;">AEGIS_MATRIX_V81</div>
-    <div class="telemetry">
-        RADAR.MODE: 3x3_PROJECTION<br>
-        INTEL: STREET_LEVEL_LABELS_ACTIVE<br>
-        STATUS: TEXTURE_SYNC_FIXED
+<div class="hud-container">
+    <div class="glitch-text">AEGIS_MATRIX_V85</div>
+    <div style="font-size: 9px; opacity: 0.6;">NEURAL_SURVEILLANCE_ACTIVE</div>
+    <div class="stats-grid">
+        <div>LAT: <span id="lat">0.00</span></div>
+        <div>LON: <span id="lon">0.00</span></div>
+        <div>STABILITY: <span style="color:white">98.4%</span></div>
+        <div>ENCRYPTION: <span style="color:white">AES-256</span></div>
     </div>
 </div>
 
-<div id="buffer-container">
-    <div id="map-engine" style="width: 1536px; height: 1536px;"></div>
-</div>
+<div id="map-engine"></div>
 
 <script type="importmap">
-    { "imports": { 
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    } }
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // --- SCENE SETUP ---
+    // --- Core Architecture ---
+    const clock = new THREE.Clock();
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 20000);
-    camera.position.set(1500, 1500, 1500);
+    scene.fog = new THREE.FogExp2(0x000808, 0.0005);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
+    camera.position.set(0, 1200, 1200);
+    camera.lookAt(0, 0, 0);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-
-    // --- LEAFLET TO CANVAS ENGINE ---
-    // We use a single large Leaflet instance as the "Master Texture"
+    // --- Advanced Leaflet Integration ---
     const lMap = L.map('map-engine', { 
-        zoomControl: false, 
-        attributionControl: false,
-        preferCanvas: true // CRITICAL: Forces Leaflet to use Canvas for rendering
+        zoomControl: false, attributionControl: false, preferCanvas: true 
     }).setView([26.2750, -81.6881], 18);
 
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(lMap);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png').addTo(lMap);
 
-    // Create the Three.js Floor Mesh
-    const floorTex = new THREE.CanvasTexture(document.querySelector('#map-engine canvas') || document.createElement('canvas'));
-    floorTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const mapCanvas = document.querySelector('#map-engine canvas');
+    const mapTex = new THREE.CanvasTexture(mapCanvas);
+    mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    const floorGeom = new THREE.PlaneGeometry(4000, 4000);
-    const floorMat = new THREE.MeshBasicMaterial({ map: floorTex, transparent: true, opacity: 0.9 });
-    const floor = new THREE.Mesh(floorGeom, floorMat);
+    // --- Tactical Floor ---
+    const floor = new THREE.Mesh(
+        new THREE.PlaneGeometry(5000, 5000),
+        new THREE.MeshBasicMaterial({ map: mapTex, transparent: true, opacity: 0.9 })
+    );
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // Decorative 3x3 Grid Overlay
-    const grid = new THREE.GridHelper(4000, 3, 0x00ffcc, 0x004444);
-    grid.position.y = 1;
+    // 3x3 Advanced Grid Overlay
+    const grid = new THREE.GridHelper(5000, 3, 0x00ffcc, 0x002222);
+    grid.position.y = 2;
     scene.add(grid);
 
-    // Sentry Core
-    const sentry = new THREE.Mesh(
-        new THREE.OctahedronGeometry(25, 0),
+    // --- Sentry Advanced Mesh ---
+    const sentryGroup = new THREE.Group();
+    const core = new THREE.Mesh(
+        new THREE.IcosahedronGeometry(40, 1),
         new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
     );
-    sentry.position.y = 100;
-    scene.add(sentry);
+    const pulse = new THREE.Mesh(
+        new THREE.SphereGeometry(38, 32, 32),
+        new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.2 })
+    );
+    sentryGroup.add(core, pulse);
+    sentryGroup.position.y = 100;
+    scene.add(sentryGroup);
 
-    // --- GPS SYNC ---
-    function syncGPS(lat, lon) {
-        lMap.setView([lat, lon], 18);
+    // --- Kinetic GPS Logic ---
+    let targetPos = { lat: 26.2750, lon: -81.6881 };
+    let currentPos = { lat: 26.2750, lon: -81.6881 };
+
+    function updateGPS() {
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(pos => {
+                targetPos.lat = pos.coords.latitude;
+                targetPos.lon = pos.coords.longitude;
+                document.getElementById('lat').innerText = targetPos.lat.toFixed(4);
+                document.getElementById('lon').innerText = targetPos.lon.toFixed(4);
+            }, null, { enableHighAccuracy: true });
+        }
     }
+    updateGPS();
 
-    if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(pos => {
-            syncGPS(pos.coords.latitude, pos.coords.longitude);
-        });
-    }
-
+    // --- Render Loop ---
     function animate() {
         requestAnimationFrame(animate);
-        
-        // Force Three.js to re-read the Leaflet Canvas every frame
-        const leafletCanvas = document.querySelector('#map-engine canvas');
-        if (leafletCanvas) {
-            floorTex.image = leafletCanvas;
-            floorTex.needsUpdate = true;
-        }
+        const delta = clock.getElapsedTime();
 
-        sentry.rotation.y += 0.01;
-        controls.update();
+        // Smooth Interpolation (Lerp) for Movement
+        currentPos.lat += (targetPos.lat - currentPos.lat) * 0.05;
+        currentPos.lon += (targetPos.lon - currentPos.lon) * 0.05;
+        lMap.setView([currentPos.lat, currentPos.lon], 18);
+
+        // Update Texture only when map settles
+        mapTex.needsUpdate = true;
+
+        // Sentry Animations
+        sentryGroup.rotation.y += 0.01;
+        sentryGroup.position.y = 100 + Math.sin(delta * 2) * 20;
+        pulse.scale.setScalar(1 + Math.sin(delta * 4) * 0.1);
+
+        // Dynamic Camera Sway
+        camera.position.x = Math.sin(delta * 0.2) * 100;
+
         renderer.render(scene, camera);
     }
     animate();
