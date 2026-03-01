@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | GPS Sync & Map Status</title>
+    <title>Sentry Node | Multi-Layer CSV Intelligence</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -10,9 +10,8 @@
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
         #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
-               background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 220px; }
+               background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 240px; max-height: 90vh; overflow-y: auto; }
 
-        /* Tactical Notification Pop-up */
         #status-toast {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             background: rgba(0, 20, 20, 0.9); border: 1px solid #00ffcc; color: #00ffcc;
@@ -20,36 +19,44 @@
             transition: opacity 1s ease; opacity: 0; pointer-events: none;
         }
 
+        #legend { margin-top: 15px; border-top: 1px solid #004444; padding-top: 10px; }
+        .legend-item { display: flex; align-items: center; font-size: 10px; margin-bottom: 5px; color: #aaa; }
+        .color-box { width: 12px; height: 12px; margin-right: 8px; border: 1px solid #fff; }
+
         #node-popup { 
             position: absolute; display: none; background: rgba(0, 40, 40, 0.9); 
-            border: 1px solid #00ffcc; color: #00ffcc; padding: 10px; font-size: 11px; 
-            z-index: 200; pointer-events: none; border-radius: 2px;
+            border: 1px solid #00ffcc; color: #00ffcc; padding: 10px; font-size: 11px; z-index: 200;
         }
 
-        .section-label { font-size: 10px; color: #00ffcc; margin-top: 10px; border-bottom: 1px solid #004444; padding-bottom: 2px; }
-        select, button { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 5px; 
+        .section-label { font-size: 10px; color: #00ffcc; margin-top: 12px; border-bottom: 1px solid #004444; padding-bottom: 2px; }
+        select, button, input[type="file"] { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 5px; 
                          cursor: pointer; font-family: monospace; font-size: 11px; margin-top: 5px; width: 100%; }
+        input[type="file"] { padding: 2px; font-size: 9px; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px;">SENTRY_OS_V8</div>
-    <div id="coords" style="margin-top:8px;">LAT: 26.2750 LON: -81.6881</div>
-    <div class="stat" style="font-size: 11px; color:#008888; margin-top:4px;" id="nodes">ACTIVE NODES: 0</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px;">SENTRY_OS_V9</div>
+    <div id="coords" style="margin-top:8px;">SYNCING GPS...</div>
     
-    <div class="section-label">MAP INTERFACE</div>
-    <select id="mapStyle" onchange="changeMapStyle()">
-        <option value="https://tiles.openfreemap.org/styles/dark">Stealth Dark</option>
-        <option value="https://demotiles.maplibre.org/style.json">Tactical Vector</option>
-    </select>
-    <button onclick="exportToCSV()" style="margin-top:10px;">EXPORT TRAJECTORY</button>
+    <div class="section-label">LIVE TELEMETRY</div>
+    <button onclick="exportToCSV()">EXPORT CURRENT (CSV)</button>
+
+    <div class="section-label">DATA IMPORT</div>
+    <input type="file" id="csv-upload" multiple accept=".csv" onchange="handleImport(event)">
+    
+    <div id="legend">
+        <div class="section-label">SYSTEM KEYS</div>
+        <div id="legend-list">
+            <div class="legend-item"><div class="color-box" style="background: #ff0055;"></div> LIVE SESSION</div>
+        </div>
+    </div>
 </div>
 
-<div id="status-toast">SYSTEM: SYNCING MAP TILES...</div>
-
+<div id="status-toast">SYSTEM: INITIALIZING...</div>
 <div id="node-popup">
-    <div style="font-weight:bold; border-bottom: 1px solid #00ffcc; margin-bottom: 4px;">NODE_DATA</div>
+    <div id="pop-src" style="font-weight:bold; color:#fff; border-bottom:1px solid #00ffcc; margin-bottom:4px;">SOURCE: --</div>
     <div id="pop-time">TIME: --</div>
     <div id="pop-lat">LAT: --</div>
     <div id="pop-lon">LON: --</div>
@@ -74,50 +81,40 @@
     const mouse = new THREE.Vector2();
     let selectedNodeTarget = null;
     let mapLoaded = false;
+    window.gpsHistory = [];
 
-    // --- 1. MAP ENGINE + LISTENERS ---
+    const PALETTE = [0x00ffcc, 0xffff00, 0xff00ff, 0x00aaff, 0xff8800, 0x88ff00];
+    let colorIndex = 0;
+
+    // --- 1. MAP ENGINE ---
     const map = new maplibregl.Map({
         container: 'map-buffer',
         style: 'https://tiles.openfreemap.org/styles/dark',
-        center: [-81.6881, 26.2750], 
-        zoom: 18,
-        interactive: false,
-        preserveDrawingBuffer: true 
+        center: [-81.6881, 26.2750], zoom: 18,
+        interactive: false, preserveDrawingBuffer: true 
     });
-
-    const toast = document.getElementById('status-toast');
-    toast.style.opacity = '1';
 
     map.on('idle', () => {
         mapLoaded = true;
-        toast.innerText = "SYSTEM: MAP SYNC OK";
-        setTimeout(() => { toast.style.opacity = '0'; }, 2000);
+        document.getElementById('status-toast').style.opacity = '0';
     });
-
-    window.changeMapStyle = () => {
-        mapLoaded = false;
-        toast.innerText = "SYSTEM: SYNCING MAP TILES...";
-        toast.style.opacity = '1';
-        map.setStyle(document.getElementById('mapStyle').value);
-    };
 
     // --- 2. THREE.JS ENGINE ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(30, 40, 50);
+    camera.position.set(40, 50, 60);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
-    sun.position.set(20, 40, 20);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+    const sun = new THREE.DirectionalLight(0xffffff, 1);
+    sun.position.set(20, 50, 20);
     scene.add(sun);
 
-    // --- 3. FLOOR & SENTRY ---
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(400, 400), new THREE.MeshBasicMaterial({ map: mapTex }));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshBasicMaterial({ map: mapTex }));
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
@@ -130,92 +127,112 @@
     sentry.add(ring);
     scene.add(sentry);
 
-    // --- 4. DATA NODES ---
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
-    const sphereGeo = new THREE.SphereGeometry(0.8, 16, 16);
 
-    function logAndPlot(lat, lon) {
-        const now = Date.now();
-        if (now - lastLoggedTime >= 1000) {
-            lastLoggedTime = now;
-            const dataPoint = { timestamp: new Date().toLocaleTimeString(), lat, lon };
-            window.gpsHistory = window.gpsHistory || [];
-            window.gpsHistory.push(dataPoint);
-
-            if (!startCoords) {
-                startCoords = { lat, lon };
-            } else {
-                const dy = (lat - startCoords.lat) * 111111;
-                const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
-                const node = new THREE.Mesh(sphereGeo, new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0x440000 }));
-                node.position.set(dx, 0.8, -dy);
-                node.userData = dataPoint;
-                breadcrumbs.add(node);
-            }
-            document.getElementById('nodes').innerText = `ACTIVE NODES: ${breadcrumbs.children.length}`;
-            document.getElementById('coords').innerText = `LAT: ${lat.toFixed(6)} LON: ${lon.toFixed(6)}`;
-        }
+    // --- 3. GPS & IMPORT LOGIC ---
+    function plotPoint(lat, lon, data, color, sourceName) {
+        if (!startCoords) startCoords = { lat, lon };
+        const dy = (lat - startCoords.lat) * 111111;
+        const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
+        
+        const node = new THREE.Mesh(
+            new THREE.SphereGeometry(0.7, 12, 12),
+            new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.2 })
+        );
+        node.position.set(dx, 0.7, -dy);
+        node.userData = { ...data, source: sourceName, color: color };
+        breadcrumbs.add(node);
     }
+
+    window.handleImport = async (event) => {
+        const files = event.target.files;
+        for (let file of files) {
+            const text = await file.text();
+            const lines = text.split('\n').slice(1); // Skip header
+            const color = PALETTE[colorIndex % PALETTE.length];
+            colorIndex++;
+
+            // Add to Legend
+            const item = document.createElement('div');
+            item.className = 'legend-item';
+            item.innerHTML = `<div class="color-box" style="background: #${color.toString(16).padStart(6, '0')};"></div> ${file.name.substring(0,15)}...`;
+            document.getElementById('legend-list').appendChild(item);
+
+            lines.forEach(line => {
+                const parts = line.split(',');
+                if (parts.length >= 3) {
+                    const lat = parseFloat(parts[1]);
+                    const lon = parseFloat(parts[2]);
+                    plotPoint(lat, lon, { timestamp: parts[0], lat, lon }, color, file.name);
+                }
+            });
+        }
+    };
 
     if ("geolocation" in navigator) {
         navigator.geolocation.watchPosition(pos => {
             const { latitude, longitude } = pos.coords;
             map.setCenter([longitude, latitude]);
-            logAndPlot(latitude, longitude);
+            document.getElementById('coords').innerText = `LAT: ${latitude.toFixed(6)} LON: ${longitude.toFixed(6)}`;
+            
+            const now = Date.now();
+            if (now - lastLoggedTime >= 1000) {
+                lastLoggedTime = now;
+                const dp = { timestamp: new Date().toLocaleTimeString(), lat: latitude, lon: longitude };
+                window.gpsHistory.push(dp);
+                plotPoint(latitude, longitude, dp, 0xff0055, "LIVE SESSION");
+            }
         }, null, { enableHighAccuracy: true });
     }
 
-    // --- 5. INTERACTION & ANIME ---
+    // --- 4. INTERACTION ---
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
-        const intersects = raycaster.intersectObjects(breadcrumbs.children);
+        const hits = raycaster.intersectObjects(breadcrumbs.children);
         const popup = document.getElementById('node-popup');
 
-        if (intersects.length > 0) {
-            const target = intersects[0].object;
-            const data = target.userData;
+        if (hits.length > 0) {
+            const obj = hits[0].object;
+            const d = obj.userData;
             popup.style.display = 'block';
             popup.style.left = e.clientX + 10 + 'px';
             popup.style.top = e.clientY + 10 + 'px';
-            document.getElementById('pop-time').innerText = `TIME: ${data.timestamp}`;
-            document.getElementById('pop-lat').innerText = `LAT: ${data.lat.toFixed(6)}`;
-            document.getElementById('pop-lon').innerText = `LON: ${data.lon.toFixed(6)}`;
-
-            // Highlight color
-            target.material.emissive.setHex(0x00ffcc);
-            setTimeout(() => target.material.emissive.setHex(0x440000), 1000);
-            
-            // Set Zoom Anime target
-            selectedNodeTarget = target.position.clone().add(new THREE.Vector3(5, 8, 8));
+            document.getElementById('pop-src').innerText = `SOURCE: ${d.source}`;
+            document.getElementById('pop-time').innerText = `TIME: ${d.timestamp}`;
+            document.getElementById('pop-lat').innerText = `LAT: ${d.lat.toFixed(6)}`;
+            document.getElementById('pop-lon').innerText = `LON: ${d.lon.toFixed(6)}`;
+            selectedNodeTarget = obj.position.clone().add(new THREE.Vector3(8, 12, 12));
         } else {
             popup.style.display = 'none';
             selectedNodeTarget = null;
         }
     });
 
-    // --- 6. RENDER LOOP ---
+    window.exportToCSV = () => {
+        let csv = "Timestamp,Latitude,Longitude\n" + window.gpsHistory.map(e => `${e.timestamp},${e.lat},${e.lon}`).join("\n");
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        a.download = `sentry_log_${Date.now()}.csv`;
+        a.click();
+    };
+
     function animate() {
         requestAnimationFrame(animate);
-        const time = Date.now() * 0.001;
-        
-        // Prevent texture update until map is actually loaded
         if (mapLoaded) mapTex.needsUpdate = true;
-
+        const time = Date.now() * 0.001;
         sentry.position.y = 3 + Math.sin(time * 3) * 0.8;
         sentry.rotation.y += 0.015;
-
         const p = (Math.sin(time * 4) + 1) / 2;
         ring.scale.set(0.6 + p*2, 0.6 + p*2, 1);
         ring.material.opacity = 1 - p;
 
         if (selectedNodeTarget) {
-            camera.position.lerp(selectedNodeTarget, 0.1);
-            controls.target.lerp(selectedNodeTarget.clone().sub(new THREE.Vector3(5,8,8)), 0.1);
+            camera.position.lerp(selectedNodeTarget, 0.08);
+            controls.target.lerp(selectedNodeTarget.clone().sub(new THREE.Vector3(8,12,12)), 0.08);
         }
-
         controls.update();
         renderer.render(scene, camera);
     }
