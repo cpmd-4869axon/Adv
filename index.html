@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | V28 Animated Lock</title>
+    <title>Sentry Node | V28 Unified Exchange</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -133,60 +133,115 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    window.clearImports = () => {
-        const toRemove = [];
-        breadcrumbs.children.forEach(node => { if (node.userData.source === "CSV_IMPORT") toRemove.push(node); });
-        toRemove.forEach(node => breadcrumbs.remove(node));
-        document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
-    };
-
-    window.systemReset = () => {
-        if (!confirm("RESTORE SYSTEM?")) return;
-        while(breadcrumbs.children.length > 0) breadcrumbs.remove(breadcrumbs.children[0]);
-        window.sessionData = [];
-        sessionStartTime = Date.now();
-        document.getElementById('stream-nodes').innerText = "0";
-        document.getElementById('stream-time').innerText = "00:00";
-        document.getElementById('node-popup').style.display = 'none';
-        window.resetCameraView();
-    };
-
-    window.resetCameraView = () => {
-        const startPos = camera.position.clone(), endPos = sentry.position.clone().add(new THREE.Vector3(30, 50, 70));
-        const startTarget = controls.target.clone(), endTarget = sentry.position.clone();
-        let startTime = null;
-        function glide(time) {
-            if (!startTime) startTime = time;
-            let progress = (time - startTime) / 800;
-            if (progress > 1) progress = 1;
-            const ease = 1 - Math.pow(1 - progress, 4);
-            camera.position.lerpVectors(startPos, endPos, ease);
-            controls.target.lerpVectors(startTarget, endTarget, ease);
-            if (progress < 1) requestAnimationFrame(glide);
-        }
-        requestAnimationFrame(glide);
-    };
+    // --- DATA HANDLING LOGIC ---
 
     window.exportToCSV = () => {
-        if (window.sessionData.length === 0) return alert("NO DATA.");
-        const csv = "t,lat,lon,src\n" + window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
+        if (window.sessionData.length === 0) return alert("NO DATA TO EXPORT.");
+        // SYMMETRIC SCHEMA: timestamp, latitude, longitude, source
+        const csvHeader = "timestamp,lat,lon,source\n";
+        const csvBody = window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
+        const blob = new Blob([csvHeader + csvBody], { type: 'text/csv' });
+        const url = URL.createObjectURL(blob);
         const link = document.createElement("a");
-        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        link.href = url;
         link.download = `SENTRY_LOG_${Date.now()}.csv`;
         link.click();
     };
 
     window.importCSV = (event) => {
+        const file = event.target.files[0];
+        if (!file) return;
         const reader = new FileReader();
         reader.onload = (e) => {
-            const lines = e.target.result.split('\n').slice(1);
-            lines.forEach(line => {
-                const p = line.split(',');
-                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], source: "CSV_IMPORT" }, 0x00ccff);
+            const content = e.target.result;
+            const lines = content.split('\n').filter(line => line.trim() !== "");
+            
+            // Validate Header
+            const header = lines[0].toLowerCase();
+            if (!header.includes("lat") || !header.includes("lon")) {
+                alert("INVALID FORMAT: MISSING COORDINATES");
+                return;
+            }
+
+            // Process Data Rows
+            lines.slice(1).forEach(line => {
+                const cols = line.split(',');
+                if (cols.length >= 3) {
+                    const lat = parseFloat(cols[1]);
+                    const lon = parseFloat(cols[2]);
+                    const data = {
+                        t: cols[0],
+                        lat: lat,
+                        lon: lon,
+                        source: cols[3] || "IMPORTED_NODE"
+                    };
+                    // Use a cyan tactical color for imports
+                    plot(lat, lon, data, 0x00ccff);
+                }
             });
+            alert(`IMPORT COMPLETE: ${lines.length - 1} NODES ADDED.`);
         };
-        reader.readAsText(event.target.files[0]);
+        reader.readAsText(file);
     };
+
+    // --- RENDERING & ANIMATION ---
+
+    function plot(lat, lon, data, color) {
+        if (!startCoords) startCoords = { lat, lon };
+        const dy = (lat - startCoords.lat) * 111111;
+        const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
+        
+        const node = new THREE.Mesh(
+            new THREE.SphereGeometry(1.5, 16, 16), 
+            new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.4 })
+        );
+        node.position.set(dx, 1.5, -dy);
+        
+        node.userData = { 
+            t: data.t, lat: lat.toFixed(7), lon: lon.toFixed(7), 
+            x: dx.toFixed(2), z: (-dy).toFixed(2), 
+            source: data.source, baseColor: color, 
+            targetScale: 1.0 
+        };
+        
+        breadcrumbs.add(node);
+        sentry.position.set(dx, sentry.position.y, -dy);
+        document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
+    }
+
+    window.addEventListener('mousedown', (e) => {
+        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
+        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
+        raycaster.setFromCamera(mouse, camera);
+        
+        const hits = raycaster.intersectObjects(breadcrumbs.children);
+        if (hits.length > 0) {
+            if (selectedNode) { 
+                selectedNode.userData.targetScale = 1.0; 
+                selectedNode.material.color.set(selectedNode.userData.baseColor); 
+            }
+            selectedNode = hits[0].object;
+            selectedNode.userData.targetScale = 2.8; // Expanded state
+            selectedNode.material.color.set(0x00ffff); 
+
+            const popup = document.getElementById('node-popup');
+            popup.style.display = 'block';
+            popup.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + "px";
+            popup.style.top = Math.min(e.clientY + 20, window.innerHeight - 200) + "px";
+            
+            document.getElementById('pop-src').innerText = selectedNode.userData.source;
+            document.getElementById('pop-time').innerText = selectedNode.userData.t;
+            document.getElementById('pop-lat').innerText = selectedNode.userData.lat;
+            document.getElementById('pop-lon').innerText = selectedNode.userData.lon;
+            document.getElementById('pop-x').innerText = selectedNode.userData.x + "m";
+            document.getElementById('pop-z').innerText = selectedNode.userData.z + "m";
+        } else if (selectedNode) {
+            selectedNode.userData.targetScale = 1.0;
+            selectedNode.material.color.set(selectedNode.userData.baseColor);
+            selectedNode = null;
+            document.getElementById('node-popup').style.display = 'none';
+        }
+    });
 
     window.setTracking = (state) => {
         trackingState = state;
@@ -213,76 +268,14 @@
         }, null, { enableHighAccuracy: true });
     }
 
-    function plot(lat, lon, data, color) {
-        if (!startCoords) startCoords = { lat, lon };
-        const dy = (lat - startCoords.lat) * 111111;
-        const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
-        const node = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.4 }));
-        node.position.set(dx, 1.5, -dy);
-        
-        // METADATA & ANIMATION DATA
-        node.userData = { 
-            t: data.t, lat: lat.toFixed(7), lon: lon.toFixed(7), 
-            x: dx.toFixed(2), z: (-dy).toFixed(2), 
-            source: data.source, baseColor: color, 
-            targetScale: 1.0  // Default state
-        };
-        
-        breadcrumbs.add(node);
-        sentry.position.set(dx, sentry.position.y, -dy);
-        document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
-    }
-
-    window.addEventListener('mousedown', (e) => {
-        mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
-        mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
-        raycaster.setFromCamera(mouse, camera);
-        
-        if (raycaster.intersectObject(pyr).length > 0) { window.resetCameraView(); return; }
-        
-        const hits = raycaster.intersectObjects(breadcrumbs.children);
-        if (hits.length > 0) {
-            // DE-SELECT OLD NODE
-            if (selectedNode) { 
-                selectedNode.userData.targetScale = 1.0; 
-                selectedNode.material.color.set(selectedNode.userData.baseColor); 
-            }
-            
-            // SELECT NEW NODE
-            selectedNode = hits[0].object;
-            selectedNode.userData.targetScale = 2.8; // ANIMATE BIGGER
-            selectedNode.material.color.set(0x00ffff); // LOCK COLOR
-
-            const popup = document.getElementById('node-popup');
-            popup.style.display = 'block';
-            popup.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + "px";
-            popup.style.top = Math.min(e.clientY + 20, window.innerHeight - 200) + "px";
-            
-            document.getElementById('pop-src').innerText = selectedNode.userData.source;
-            document.getElementById('pop-time').innerText = selectedNode.userData.t;
-            document.getElementById('pop-lat').innerText = selectedNode.userData.lat;
-            document.getElementById('pop-lon').innerText = selectedNode.userData.lon;
-            document.getElementById('pop-x').innerText = selectedNode.userData.x + "m";
-            document.getElementById('pop-z').innerText = selectedNode.userData.z + "m";
-        } else if (selectedNode) {
-            // RETURN TO NORMAL STATE
-            selectedNode.userData.targetScale = 1.0;
-            selectedNode.material.color.set(selectedNode.userData.baseColor);
-            selectedNode = null;
-            document.getElementById('node-popup').style.display = 'none';
-        }
-    });
-
     function animate() {
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
         sentry.position.y = 11 + Math.sin(Date.now() * 0.002) * 2;
         sentry.rotation.y += 0.03;
         
-        // ANIMATION LOOP FOR NODES
         breadcrumbs.children.forEach(n => {
             const ts = n.userData.targetScale;
-            // Smoothly interpolate scale
             n.scale.lerp(new THREE.Vector3(ts, ts, ts), 0.15);
         });
 
