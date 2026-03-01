@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Proximity HUD</title>
+    <title>Sentry Node | Live Telemetry</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -12,29 +12,27 @@
         #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
                background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 260px; }
 
-        /* Floating Proximity HUD */
         #node-popup { 
             position: absolute; display: none; background: rgba(0, 30, 30, 0.9); 
             border: 1px solid #00ffcc; color: #00ffcc; padding: 10px; 
-            z-index: 200; pointer-events: none; font-size: 12px;
-            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
+            z-index: 200; pointer-events: none; font-size: 11px;
         }
-        #node-popup div { margin-bottom: 2px; }
 
         .section-label { font-size: 11px; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #004444; padding-bottom: 3px; }
         .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
         
-        button, input[type="file"] { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 8px; 
-                         cursor: pointer; font-family: monospace; font-size: 11px; margin-top: 8px; width: 100%; }
-        button.active-btn { background: #00ffcc; color: #000; }
+        button { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 8px; 
+                         cursor: pointer; font-family: monospace; font-size: 11px; width: 100%; transition: 0.2s; }
+        button:hover { background: #004444; }
+        button.active-btn { background: #00ffcc; color: #000; font-weight: bold; }
         #btn-wipe { border-color: #ff3333; color: #ff3333; margin-top: 15px; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V15</div>
-    <div id="coords" style="margin-top:10px; font-size: 12px;">SYSTEM_IDLE</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V16</div>
+    <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: STANDBY</div>
     
     <div class="section-label">TELEMETRY CONTROL</div>
     <div class="control-grid">
@@ -44,7 +42,8 @@
     </div>
 
     <div class="section-label">DATA UPLOAD</div>
-    <input type="file" id="csv-upload" multiple accept=".csv" onchange="handleImport(event)">
+    <input type="file" id="csv-upload" multiple accept=".csv" onchange="handleImport(event)" style="display:none">
+    <button onclick="document.getElementById('csv-upload').click()">CHOOSE FILES</button>
     
     <button id="btn-wipe" onclick="wipeImportedData()">WIPE IMPORTED DATA</button>
 </div>
@@ -71,6 +70,8 @@
 
     let startCoords = null;
     let trackingState = 'STOP';
+    let lastPosition = null;
+    let trackingInterval = null;
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let selectedNode = null;
@@ -106,16 +107,43 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    window.setTracking = (s) => {
-        trackingState = s;
+    // --- TRACKING ENGINE ---
+    window.setTracking = (state) => {
+        trackingState = state;
         document.querySelectorAll('.control-grid button').forEach(b => b.classList.remove('active-btn'));
-        document.getElementById(`btn-${s.toLowerCase()}`).classList.add('active-btn');
+        document.getElementById(`btn-${state.toLowerCase()}`).classList.add('active-btn');
+
+        if (state === 'START' && !trackingInterval) {
+            // Log point every 1 second
+            trackingInterval = setInterval(() => {
+                if (trackingState === 'START' && lastPosition) {
+                    plot(lastPosition.lat, lastPosition.lon, 
+                         { t: new Date().toLocaleTimeString(), lat: lastPosition.lat, lon: lastPosition.lon }, 
+                         0xff0055, "LIVE SESSION", true);
+                }
+            }, 1000);
+        } else if (state === 'STOP' || state === 'PAUSE') {
+            if (state === 'STOP') {
+                clearInterval(trackingInterval);
+                trackingInterval = null;
+            }
+        }
     };
+
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+            const { latitude: lat, longitude: lon } = pos.coords;
+            lastPosition = { lat, lon };
+            document.getElementById('coords').innerText = `LAT: ${lat.toFixed(6)} LON: ${lon.toFixed(6)}`;
+            map.setCenter([lon, lat]);
+        }, err => console.error(err), { enableHighAccuracy: true });
+    }
 
     function plot(lat, lon, data, color, source, isLive) {
         if (!startCoords) startCoords = { lat, lon };
         const dy = (lat - startCoords.lat) * 111111;
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
+        
         const node = new THREE.Mesh(
             new THREE.SphereGeometry(1.0, 16, 16), 
             new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.2 })
@@ -123,25 +151,12 @@
         node.position.set(dx, 1.0, -dy);
         node.userData = { ...data, source, color, isLive, targetScale: 1.0 };
         breadcrumbs.add(node);
+        
+        // Auto-move sentry to latest point
+        sentry.position.set(dx, 3.5, -dy);
     }
 
-    window.handleImport = async (e) => {
-        for (let file of e.target.files) {
-            const text = await file.text();
-            text.split('\n').slice(1).forEach(line => {
-                const p = line.split(',');
-                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, 0x00ffcc, file.name, false);
-            });
-        }
-    };
-
-    window.wipeImportedData = () => {
-        const toRemove = breadcrumbs.children.filter(n => !n.userData.isLive);
-        toRemove.forEach(n => breadcrumbs.remove(n));
-        selectedNode = null;
-        document.getElementById('node-popup').style.display = 'none';
-    };
-
+    // Reuse selection/deselect logic from V15
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -150,25 +165,17 @@
         const pop = document.getElementById('node-popup');
 
         if (hits.length > 0) {
-            if (selectedNode) {
-                selectedNode.userData.targetScale = 1.0;
-                selectedNode.material.wireframe = false;
-            }
+            if (selectedNode) { selectedNode.userData.targetScale = 1.0; selectedNode.material.wireframe = false; }
             selectedNode = hits[0].object;
-            selectedNode.userData.targetScale = 2.5; // EXPAND
+            selectedNode.userData.targetScale = 2.5;
             selectedNode.material.wireframe = true;
-            
             pop.style.display = 'block';
             document.getElementById('pop-src').innerText = selectedNode.userData.source;
             document.getElementById('pop-time').innerText = "T: " + selectedNode.userData.t;
             document.getElementById('pop-lat').innerText = "LAT: " + parseFloat(selectedNode.userData.lat).toFixed(5);
             document.getElementById('pop-lon').innerText = "LON: " + parseFloat(selectedNode.userData.lon).toFixed(5);
         } else {
-            if (selectedNode) {
-                selectedNode.userData.targetScale = 1.0; // CONTRACT
-                selectedNode.material.wireframe = false;
-                selectedNode = null;
-            }
+            if (selectedNode) { selectedNode.userData.targetScale = 1.0; selectedNode.material.wireframe = false; selectedNode = null; }
             pop.style.display = 'none';
         }
     });
@@ -176,25 +183,18 @@
     function animate() {
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
-        
         sentry.rotation.y += 0.01;
-        sentry.position.y = 3 + Math.sin(Date.now()*0.002);
-
-        // Animation Handling
+        
         breadcrumbs.children.forEach(node => {
-            const step = 0.15;
-            if (node.scale.x < node.userData.targetScale) node.scale.addScalar(step);
-            if (node.scale.x > node.userData.targetScale) node.scale.subScalar(step);
+            if (node.scale.x < node.userData.targetScale) node.scale.addScalar(0.15);
+            if (node.scale.x > node.userData.targetScale) node.scale.subScalar(0.15);
         });
 
-        // Update Proximity HUD Position
         if (selectedNode) {
             const vector = selectedNode.position.clone().project(camera);
-            const x = (vector.x + 1) / 2 * window.innerWidth;
-            const y = -(vector.y - 1) / 2 * window.innerHeight;
             const pop = document.getElementById('node-popup');
-            pop.style.left = (x + 20) + 'px';
-            pop.style.top = (y - 40) + 'px';
+            pop.style.left = ((vector.x + 1) / 2 * window.innerWidth + 20) + 'px';
+            pop.style.top = (-(vector.y - 1) / 2 * window.innerHeight - 40) + 'px';
         }
 
         controls.update();
