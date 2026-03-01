@@ -2,133 +2,106 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>3D Geospatial Sentry</title>
+    <title>Sentry Node: Synced Tactical Map</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        body { margin: 0; background: #050505; font-family: monospace; overflow: hidden; }
-        #map-source { position: absolute; width: 1024px; height: 1024px; visibility: hidden; }
-        #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; background: rgba(0,20,20,0.8); 
-               padding: 15px; border: 1px solid #00ffcc; pointer-events: none; z-index: 100; text-transform: uppercase; }
-        .label { font-size: 10px; opacity: 0.8; margin-bottom: 5px; }
+        body { margin: 0; background: #000; overflow: hidden; font-family: monospace; }
+        #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -5000px; }
+        #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
+               background: rgba(0,20,10,0.8); padding: 10px; z-index: 10; pointer-events: none; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div class="label">System: Active Sentry Node</div>
-    <div id="status">GPS: SEARCHING...</div>
-    <div id="stats" style="margin-top:10px; font-size: 11px;">Zoom/Pan/Tilt Enabled</div>
+    <div>SYSTEM: ACTIVE_SENTRY_NODE</div>
+    <div id="status">SYNCING GEOSPATIAL DATA...</div>
 </div>
-
-<div id="map-source"></div>
+<div id="map-buffer"></div>
 
 <script type="importmap">
-    { 
-        "imports": { 
-            "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-        } 
-    }
+    { "imports": { 
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    } }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // --- 1. THE MAP DATA SOURCE ---
+    // 1. MAP BUFFER (The "Floor" Data)
     const map = new maplibregl.Map({
-        container: 'map-source',
-        style: 'https://demotiles.maplibre.org/style.json', // Vector tiles for clarity
-        center: [-81.6881, 26.2750], // Initial fallback coords
-        zoom: 17,
+        container: 'map-buffer',
+        style: 'https://demotiles.maplibre.org/style.json',
+        center: [-81.6881, 26.2750], // Naples, FL area
+        zoom: 16,
         interactive: false,
-        preserveDrawingBuffer: true 
+        preserveDrawingBuffer: true // CRITICAL: Allows Three.js to read the pixels
     });
 
-    // --- 2. THREE.JS ENGINE ---
+    // 2. THREE.JS SCENE
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x050505);
-    scene.fog = new THREE.Fog(0x050505, 20, 150);
-
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 1000);
-    camera.position.set(25, 25, 25);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+    camera.position.set(0, 10, 15);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio);
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
 
-    // ADD CONTROLS (The core of Pan/Tilt/Zoom)
     const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.maxPolarAngle = Math.PI / 2.1; // Prevent going under the floor
 
-    // --- 3. 3D OBJECTS ---
-    const mapCanvas = map.getCanvas();
-    const mapTexture = new THREE.CanvasTexture(mapCanvas);
-    
-    // The "World" Floor
-    const floorGeo = new THREE.PlaneGeometry(100, 100);
-    const floorMat = new THREE.MeshBasicMaterial({ map: mapTexture, side: THREE.DoubleSide });
-    const worldFloor = new THREE.Mesh(floorGeo, floorMat);
-    worldFloor.rotation.x = -Math.PI / 2;
-    scene.add(worldFloor);
+    // 3. THE SYNCED FLOOR
+    const texture = new THREE.CanvasTexture(map.getCanvas());
+    texture.minFilter = THREE.LinearFilter;
+    texture.magFilter = THREE.LinearFilter;
+    // Set texture to repeat so we can "scroll" the floor
+    texture.wrapS = THREE.RepeatWrapping;
+    texture.wrapT = THREE.RepeatWrapping;
 
-    // The Sentry Marker (Grouped for animation)
-    const markerGroup = new THREE.Group();
-    const core = new THREE.Mesh(
-        new THREE.CylinderGeometry(0, 0.5, 2, 4), 
-        new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
-    );
-    markerGroup.add(core);
-    scene.add(markerGroup);
+    const floorGeometry = new THREE.PlaneGeometry(100, 100);
+    const floorMaterial = new THREE.MeshBasicMaterial({ map: texture });
+    const floor = new THREE.Mesh(floorGeometry, floorMaterial);
+    floor.rotation.x = -Math.PI / 2;
+    scene.add(floor);
 
-    // --- 4. DATA COLLECTION & LOGIC ---
-    let trailPoints = [];
-    const trailGeom = new THREE.BufferGeometry();
-    const trailMat = new THREE.LineBasicMaterial({ color: 0x00ffcc });
-    const trailLine = new THREE.Line(trailGeom, trailMat);
-    scene.add(trailLine);
+    // 4. DATA POINT (The Sentry)
+    const sentry = new THREE.Group();
+    sentry.add(new THREE.Mesh(new THREE.SphereGeometry(0.5), new THREE.MeshBasicMaterial({color: 0x00ffcc})));
+    scene.add(sentry);
 
-    if ("geolocation" in navigator) {
-        navigator.geolocation.watchPosition(pos => {
-            const { latitude, longitude } = pos.coords;
-            document.getElementById('status').innerText = `LAT: ${latitude.toFixed(5)} LON: ${longitude.toFixed(5)}`;
-            
-            // Update Map Source
-            map.setCenter([longitude, latitude]);
-
-            // Add to Trail (Data Collection)
-            // In a real app, you would convert Lng/Lat to X/Z grid offsets
-            // Here, we center the map on the user, so the user stays at 0,0,0
-        }, null, { enableHighAccuracy: true });
+    // 5. THE SYNC LOGIC
+    function syncMapWithData(deltaX, deltaY) {
+        // Move the floor texture UVs in sync with data movement
+        // If data moves "Right" (+X), floor texture must move "Left"
+        texture.offset.x += deltaX;
+        texture.offset.y += deltaY;
+        
+        // Update HUD
+        document.getElementById('status').innerText = `X-OFFSET: ${texture.offset.x.toFixed(4)}`;
     }
 
-    // --- 5. RENDER LOOP ---
+    // Capture GPS to move map
+    if ("geolocation" in navigator) {
+        navigator.geolocation.watchPosition(pos => {
+            map.setCenter([pos.coords.longitude, pos.coords.latitude]);
+            texture.needsUpdate = true; // Refresh texture from map canvas
+        });
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         
-        // Dynamic Texture Refresh
-        mapTexture.needsUpdate = true;
-        
-        // Marker Animation
-        markerGroup.rotation.y += 0.02;
-        markerGroup.position.y = 1 + Math.sin(Date.now() * 0.003) * 0.5;
+        // Constant refresh of the map canvas onto the 3D plane
+        if (map.loaded()) {
+            texture.needsUpdate = true;
+        }
 
         controls.update();
         renderer.render(scene, camera);
     }
-
     animate();
-
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
 </script>
 </body>
 </html>
