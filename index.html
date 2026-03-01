@@ -2,65 +2,55 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V80 Tactical Grid</title>
+    <title>Sentry OS | V80 Tactical Matrix</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        :root { --neon: #00ffcc; --warning: #ffcc00; --bg: #000808; }
-        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
+        :root { --neon: #00ffcc; --bg: #000808; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; }
         
-        /* Tactical HUD Elements */
-        #hud { position: absolute; top: 20px; left: 20px; padding: 15px; z-index: 100; width: 320px; border: 1px solid var(--neon); background: rgba(0, 10, 10, 0.9); }
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 15px; }
-        button { background: #001515; color: var(--neon); border: 1px solid #004444; padding: 10px; cursor: pointer; font-size: 10px; font-weight: bold; }
-        .active-btn { background: var(--neon) !important; color: #000 !important; }
-        #compass { font-size: 42px; text-align: center; margin: 5px 0; color: var(--warning); }
-
-        /* Hidden Buffer for Leaflet Tile Processing */
-        #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
+        /* Hidden Buffer for Leaflet Capture */
+        #map-capture { position: absolute; width: 1024px; height: 1024px; top: -9999px; }
+        
+        .panel { position: absolute; top: 20px; left: 20px; padding: 15px; z-index: 100; 
+                 border: 1px solid var(--neon); background: rgba(0, 10, 10, 0.9); width: 300px; }
+        #compass { font-size: 32px; color: #ffcc00; text-align: center; margin-bottom: 10px; }
+        .telemetry { font-size: 10px; color: var(--neon); line-height: 1.4; border-top: 1px solid #004444; padding-top: 10px; }
     </style>
 </head>
 <body>
 
-<div id="hud">
-    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_GRID_V80</div>
+<div id="hud" class="panel">
+    <div style="font-weight: bold; letter-spacing: 2px; color: white;">AEGIS_MATRIX_V80</div>
     <div id="compass">N</div>
-    <div class="btn-grid">
-        <button id="btn-start" onclick="setTracking('START')">ENGAGE</button>
-        <button id="btn-pause" onclick="setTracking('PAUSE')">HOLD</button>
-        <button id="btn-stop" onclick="setTracking('STOP')" class="active-btn">HALT</button>
-    </div>
-    <div style="font-size: 9px; margin-top: 10px; border-top: 1px solid #003333; padding-top: 10px;">
-        ARRAY: 7x7 TILED_MATRIX<br>
-        INTEL: <span style="color:var(--neon);">STREET_BUILDING_LABELS_ON</span>
+    <div class="telemetry">
+        RADAR_MODE: 4x4_TILED_GRID<br>
+        INTEL: STREET_LEVEL_LABELS_ACTIVE<br>
+        STATUS: <span style="color:white;">STREAMING_MAP_DATA</span>
     </div>
 </div>
 
-<div id="map-buffer"></div>
+<div id="map-capture"></div>
 
 <script type="importmap">
-    { "imports": { 
-        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
-        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
-    } }
+    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
-    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    let lastPosition = { lat: 26.2750, lon: -81.6881 };
-    let mapLoaded = false;
+    // 1. Leaflet Intel Setup
+    const lContainer = document.getElementById('map-capture');
+    const lMap = L.map(lContainer, { zoomControl: false, attributionControl: false, fadeAnimation: false });
+    lMap.setView([26.2750, -81.6881], 19);
 
-    // --- LEAFLET DATA SOURCE ---
-    const lMap = L.map('map-buffer', { zoomControl: false, attributionControl: false }).setView([26.2750, -81.6881], 18);
+    // Using CartoDB Dark Matter with explicit labels
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(lMap);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png').addTo(lMap);
 
-    // --- THREE.JS ENGINE ---
+    // 2. Three.js Scene Setup
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000808, 0.0005);
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 20000);
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
     camera.position.set(1200, 1200, 1200);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -68,81 +58,72 @@
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
+    // 3. Create the 4x4 Matrix Floor
+    const matrixGroup = new THREE.Group();
+    const mapTex = new THREE.CanvasTexture(lContainer); 
+    mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    // --- THE 7x7 TACTICAL FLOOR ---
-    const gridGroup = new THREE.Group();
-    scene.add(gridGroup);
-
-    const tileSize = 1000;
-    const tiles = [];
-
-    function createTacticalFloor() {
-        for (let i = 0; i < 7; i++) {
-            for (let j = 0; j < 7; j++) {
-                const canvas = document.createElement('canvas');
-                canvas.width = 512;
-                canvas.height = 512;
-                const texture = new THREE.CanvasTexture(canvas);
-                texture.anisotropy = renderer.capabilities.getMaxAnisotropy();
-
-                const material = new THREE.MeshBasicMaterial({ map: texture, transparent: true, opacity: 0.8 });
-                const geometry = new THREE.PlaneGeometry(tileSize, tileSize);
-                const tile = new THREE.Mesh(geometry, material);
-
-                tile.rotation.x = -Math.PI / 2;
-                tile.position.set((i - 3) * tileSize, 0, (j - 3) * tileSize);
-                
-                gridGroup.add(tile);
-                tiles.push({ mesh: tile, texture: texture, canvas: canvas, offset: { x: i - 3, y: j - 3 } });
-            }
+    const tileSize = 600; // Size of each of the 16 tiles
+    for (let i = 0; i < 4; i++) {
+        for (let j = 0; j < 4; j++) {
+            const tileGeom = new THREE.PlaneGeometry(tileSize - 5, tileSize - 5);
+            const tileMat = new THREE.MeshBasicMaterial({ 
+                map: mapTex, 
+                transparent: true, 
+                opacity: 0.8,
+                side: THREE.DoubleSide 
+            });
+            const tile = new THREE.Mesh(tileGeom, tileMat);
+            
+            tile.position.set((i - 1.5) * tileSize, 0, (j - 1.5) * tileSize);
+            tile.rotation.x = -Math.PI / 2;
+            matrixGroup.add(tile);
         }
     }
-    createTacticalFloor();
+    scene.add(matrixGroup);
 
-    // --- SENTRY UNIT ---
-    const sentry = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(25, 0), new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2 }));
-    sentry.add(core);
-    sentry.position.y = 80;
+    // 4. Background World Grid
+    const worldGrid = new THREE.GridHelper(10000, 50, 0x003333, 0x001111);
+    worldGrid.position.y = -5;
+    scene.add(worldGrid);
+
+    // 5. Sentry Core
+    const sentry = new THREE.Mesh(
+        new THREE.OctahedronGeometry(25), 
+        new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
+    );
+    sentry.position.y = 100;
     scene.add(sentry);
-    scene.add(new THREE.AmbientLight(0x00ffff, 0.5));
 
-    function syncGrid() {
-        tiles.forEach(t => {
-            // Update internal Leaflet view to grab data for each tile segment
-            // This forces Leaflet to provide labels for the specific 7x7 area
-            t.texture.needsUpdate = true;
-        });
-    }
-
-    // Geolocation logic
-    if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(pos => {
-            lastPosition = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            lMap.setView([lastPosition.lat, lastPosition.lon], 18);
-        });
-    }
-
+    // Animation Loop
     function animate() {
         requestAnimationFrame(animate);
-        sentry.rotation.y += 0.03;
-        sentry.position.y = 80 + Math.sin(Date.now() * 0.003) * 15;
         
-        // Keep the 7x7 grid centered under the Sentry
-        gridGroup.position.set(sentry.position.x, 0, sentry.position.z);
+        // Ensure Leaflet updates are captured by Three.js
+        if (lMap) {
+            mapTex.needsUpdate = true;
+        }
 
-        controls.update();
+        sentry.rotation.y += 0.01;
+        sentry.position.y = 100 + Math.sin(Date.now() * 0.002) * 20;
+
+        // Camera orbits the center
+        const time = Date.now() * 0.0005;
+        camera.position.x = Math.cos(time) * 1500;
+        camera.position.z = Math.sin(time) * 1500;
+        camera.lookAt(0, 0, 0);
+
         renderer.render(scene, camera);
     }
     animate();
 
+    // Handle Resize
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
         camera.updateProjectionMatrix();
         renderer.setSize(window.innerWidth, window.innerHeight);
     });
+
 </script>
 </body>
 </html>
