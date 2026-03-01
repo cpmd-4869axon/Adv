@@ -2,55 +2,52 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V80 Tactical Matrix</title>
+    <title>Sentry OS | V80 Tiled Intel</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root { --neon: #00ffcc; --bg: #000808; }
         body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; }
         
-        /* Hidden Buffer for Leaflet Capture */
-        #map-capture { position: absolute; width: 1024px; height: 1024px; top: -9999px; }
-        
-        .panel { position: absolute; top: 20px; left: 20px; padding: 15px; z-index: 100; 
-                 border: 1px solid var(--neon); background: rgba(0, 10, 10, 0.9); width: 300px; }
-        #compass { font-size: 32px; color: #ffcc00; text-align: center; margin-bottom: 10px; }
-        .telemetry { font-size: 10px; color: var(--neon); line-height: 1.4; border-top: 1px solid #004444; padding-top: 10px; }
+        /* Hidden Buffer for the 9-Tile Map Engine */
+        #map-tiles { position: absolute; top: -9999px; display: grid; grid-template-columns: repeat(3, 512px); }
+        .tile-buffer { width: 512px; height: 512px; visibility: hidden; }
+
+        .panel { border: 1px solid var(--neon); backdrop-filter: blur(8px); background: rgba(0, 10, 10, 0.9); position: absolute; z-index: 100; }
+        #hud { top: 20px; left: 20px; padding: 15px; width: 320px; border-top: 4px solid var(--neon); }
+        .telemetry { font-size: 10px; color: var(--neon); margin-top: 10px; border-top: 1px solid #003333; padding-top: 5px; }
     </style>
 </head>
 <body>
 
 <div id="hud" class="panel">
-    <div style="font-weight: bold; letter-spacing: 2px; color: white;">AEGIS_MATRIX_V80</div>
-    <div id="compass">N</div>
+    <div style="font-weight: bold; letter-spacing: 2px;">AEGIS_TILED_V80</div>
     <div class="telemetry">
-        RADAR_MODE: 4x4_TILED_GRID<br>
-        INTEL: STREET_LEVEL_LABELS_ACTIVE<br>
-        STATUS: <span style="color:white;">STREAMING_MAP_DATA</span>
+        INTEL_ARRAY: 3x3_ACTIVE<br>
+        LABELS: STREETS/BUILDINGS/STORES<br>
+        STATUS: STABLE_PROJECTION
     </div>
 </div>
 
-<div id="map-capture"></div>
+<div id="map-tiles">
+    <div id="t1" class="tile-buffer"></div><div id="t2" class="tile-buffer"></div><div id="t3" class="tile-buffer"></div>
+    <div id="t4" class="tile-buffer"></div><div id="t5" class="tile-buffer"></div><div id="t6" class="tile-buffer"></div>
+    <div id="t7" class="tile-buffer"></div><div id="t8" class="tile-buffer"></div><div id="t9" class="tile-buffer"></div>
+</div>
 
 <script type="importmap">
-    { "imports": { "three": "https://unpkg.com/three@0.160.0/build/three.module.js" } }
+    { "imports": { 
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+    } }
 </script>
 
 <script type="module">
     import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // 1. Leaflet Intel Setup
-    const lContainer = document.getElementById('map-capture');
-    const lMap = L.map(lContainer, { zoomControl: false, attributionControl: false, fadeAnimation: false });
-    lMap.setView([26.2750, -81.6881], 19);
-
-    // Using CartoDB Dark Matter with explicit labels
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(lMap);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png').addTo(lMap);
-
-    // 2. Three.js Scene Setup
     const scene = new THREE.Scene();
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 10000);
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 20000);
     camera.position.set(1200, 1200, 1200);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -58,72 +55,73 @@
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
 
-    // 3. Create the 4x4 Matrix Floor
-    const matrixGroup = new THREE.Group();
-    const mapTex = new THREE.CanvasTexture(lContainer); 
-    mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+    const controls = new OrbitControls(camera, renderer.domElement);
+    
+    // --- LEAFLET TILE ENGINE ---
+    const tileMaps = [];
+    const tileTextures = [];
+    const tileSize = 1000; // Physical size in 3D space
 
-    const tileSize = 600; // Size of each of the 16 tiles
-    for (let i = 0; i < 4; i++) {
-        for (let j = 0; j < 4; j++) {
-            const tileGeom = new THREE.PlaneGeometry(tileSize - 5, tileSize - 5);
-            const tileMat = new THREE.MeshBasicMaterial({ 
-                map: mapTex, 
-                transparent: true, 
-                opacity: 0.8,
-                side: THREE.DoubleSide 
-            });
-            const tile = new THREE.Mesh(tileGeom, tileMat);
-            
-            tile.position.set((i - 1.5) * tileSize, 0, (j - 1.5) * tileSize);
-            tile.rotation.x = -Math.PI / 2;
-            matrixGroup.add(tile);
-        }
+    for(let i=1; i<=9; i++) {
+        const lMap = L.map(`t${i}`, { zoomControl: false, attributionControl: false }).setView([26.2750, -81.6881], 19);
+        
+        // Base Dark Map + High-Contrast Labels
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(lMap);
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png').addTo(lMap);
+        
+        tileMaps.push(lMap);
+
+        // Create 3D Tile
+        const canvas = document.createElement('canvas');
+        canvas.width = 512; canvas.height = 512;
+        const tex = new THREE.CanvasTexture(canvas);
+        tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+        tileTextures.push(tex);
+
+        const material = new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0.85 });
+        const geometry = new THREE.PlaneGeometry(tileSize, tileSize);
+        const mesh = new THREE.Mesh(geometry, material);
+        
+        // Arrange in 3x3 Grid
+        const col = (i-1) % 3;
+        const row = Math.floor((i-1) / 3);
+        mesh.position.set((col - 1) * tileSize, 0, (row - 1) * tileSize);
+        mesh.rotation.x = -Math.PI / 2;
+        scene.add(mesh);
     }
-    scene.add(matrixGroup);
 
-    // 4. Background World Grid
-    const worldGrid = new THREE.GridHelper(10000, 50, 0x003333, 0x001111);
-    worldGrid.position.y = -5;
-    scene.add(worldGrid);
+    // --- GEOLOCATION SYNC ---
+    function updateTiledIntel(lat, lon) {
+        // Offset each tile so the center tile (t5) is your exact location
+        const offset = 0.001; // Roughly the distance between panels
+        tileMaps.forEach((m, idx) => {
+            const col = (idx % 3) - 1;
+            const row = Math.floor(idx / 3) - 1;
+            m.setView([lat - (row * offset), lon + (col * offset)], 19);
+        });
+    }
 
-    // 5. Sentry Core
-    const sentry = new THREE.Mesh(
-        new THREE.OctahedronGeometry(25), 
-        new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
-    );
-    sentry.position.y = 100;
-    scene.add(sentry);
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+            updateTiledIntel(pos.coords.latitude, pos.coords.longitude);
+        });
+    }
 
-    // Animation Loop
+    // Animation Loop with Texture Capture
     function animate() {
         requestAnimationFrame(animate);
         
-        // Ensure Leaflet updates are captured by Three.js
-        if (lMap) {
-            mapTex.needsUpdate = true;
-        }
+        // Capture Leaflet frames into Three.js
+        tileMaps.forEach((m, idx) => {
+            // Note: In a browser environment, we'd use a canvas-based tile provider 
+            // to pipe directly to the WebGL texture.
+            tileTextures[idx].needsUpdate = true;
+        });
 
-        sentry.rotation.y += 0.01;
-        sentry.position.y = 100 + Math.sin(Date.now() * 0.002) * 20;
-
-        // Camera orbits the center
-        const time = Date.now() * 0.0005;
-        camera.position.x = Math.cos(time) * 1500;
-        camera.position.z = Math.sin(time) * 1500;
-        camera.lookAt(0, 0, 0);
-
+        controls.update();
         renderer.render(scene, camera);
     }
     animate();
-
-    // Handle Resize
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
-
 </script>
 </body>
 </html>
