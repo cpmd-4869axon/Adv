@@ -2,66 +2,78 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | V24</title>
+    <title>Sentry Node | V25 Expanded Data</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        body { margin: 0; background: #020406; overflow: hidden; font-family: 'Courier New', monospace; }
+        body { margin: 0; background: #010203; overflow: hidden; font-family: 'Courier New', monospace; color: #00ffcc; }
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
-        #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
-               background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 260px; }
+        #hud { position: absolute; top: 20px; left: 20px; border: 1px solid #00ffcc; 
+               background: rgba(0,10,10,0.9); padding: 15px; z-index: 100; width: 260px; box-shadow: 0 0 10px rgba(0,255,204,0.2); }
 
         #stream-hud {
-            position: absolute; top: 20px; right: 20px; color: #00ffcc; border: 1px solid #00ffcc;
-            background: rgba(0,10,10,0.9); padding: 10px; z-index: 100; width: 180px; font-size: 11px;
+            position: absolute; top: 20px; right: 20px; border: 1px solid #00ffcc;
+            background: rgba(0,5,5,0.9); padding: 10px; z-index: 100; width: 180px; font-size: 11px;
         }
         .stream-val { color: #fff; font-weight: bold; float: right; }
 
+        /* FIXED: Data Sphere Detailed Popup */
         #node-popup { 
-            position: absolute; display: none; background: rgba(0, 20, 20, 0.95); 
-            border: 1px solid #00ffcc; color: #00ffcc; padding: 12px; z-index: 200; 
-            pointer-events: none; width: 220px; box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
+            position: absolute; display: none; background: rgba(0, 15, 15, 0.98); 
+            border: 2px solid #00ffcc; padding: 15px; z-index: 200; 
+            pointer-events: none; width: 240px; box-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
+            clip-path: polygon(0 0, 100% 0, 100% 85%, 85% 100%, 0 100%); /* Tactical Corner */
         }
 
-        .section-label { font-size: 11px; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #004444; padding-bottom: 3px; }
-        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
+        .section-label { font-size: 10px; color: #008888; margin-top: 12px; border-bottom: 1px solid #004444; padding-bottom: 2px; text-transform: uppercase; }
+        .data-row { display: flex; justify-content: space-between; margin-top: 4px; font-size: 11px; }
+        .data-label { color: #008888; }
+        .data-val { color: #ffffff; font-weight: bold; }
         
-        button { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 8px; 
-                         cursor: pointer; font-family: monospace; font-size: 11px; width: 100%; margin-top: 5px; }
-        button.active-btn { background: #00ffcc; color: #000; font-weight: bold; }
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
+        button { background: #001a1a; color: #00ffcc; border: 1px solid #004444; padding: 8px; 
+                         cursor: pointer; font-family: monospace; font-size: 11px; width: 100%; transition: 0.2s; }
+        button:hover { background: #003333; border-color: #00ffcc; }
+        button.active-btn { background: #00ffcc; color: #000; font-weight: bold; border-color: #00ffcc; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V24</div>
-    <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: ACTIVE</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px; letter-spacing: 2px;">SENTRY_OS_V25</div>
+    <div id="coords" style="margin-top:10px; font-size: 10px; color: #008888;">SYS_LOC: PENDING...</div>
     
-    <div class="section-label">TELEMETRY CONTROL</div>
+    <div class="section-label">TELEMETRY_ENGINE</div>
     <div class="control-grid">
         <button id="btn-start" onclick="setTracking('START')">START</button>
         <button id="btn-pause" onclick="setTracking('PAUSE')">PAUSE</button>
         <button id="btn-stop" onclick="setTracking('STOP')" class="active-btn">STOP</button>
     </div>
 
-    <div class="section-label">DATA ARCHIVE</div>
-    <button onclick="exportToCSV()" style="border-color:#ffcc00; color:#ffcc00;">EXPORT SESSION</button>
-    <input type="file" id="csv-import" accept=".csv" onchange="importCSV(event)" style="display:none">
-    <button onclick="document.getElementById('csv-import').click()">IMPORT DATA</button>
+    <div class="section-label">ARCHIVE_TOOLS</div>
+    <button onclick="exportToCSV()" style="border-color:#ffcc00; color:#ffcc00; margin-top:10px;">EXPORT LOG</button>
 </div>
 
 <div id="stream-hud">
-    <div style="border-bottom: 1px solid #004444; margin-bottom: 8px; padding-bottom: 4px; font-weight: bold;">Session Meta</div>
-    <div>Nodes: <span id="stream-nodes" class="stream-val">0</span></div>
-    <div style="margin-top: 5px;">Elapsed: <span id="stream-time" class="stream-val">00:00</span></div>
+    <div style="border-bottom: 1px solid #004444; margin-bottom: 8px; padding-bottom: 4px; font-weight: bold; color: #00ffcc;">SENTRY_METRICS</div>
+    <div>Nodes_Logged: <span id="stream-nodes" class="stream-val">0</span></div>
+    <div style="margin-top: 5px;">Active_Time: <span id="stream-time" class="stream-val">00:00</span></div>
 </div>
 
 <div id="node-popup">
-    <div class="pop-header" id="pop-src" style="font-weight:bold; border-bottom:1px solid #00ffcc; margin-bottom:5px;">SOURCE</div>
-    <div style="font-size: 10px;" id="pop-time">TIME: --</div>
-    <div style="font-size: 10px;" id="pop-lat">LAT: --</div>
-    <div style="font-size: 10px;" id="pop-lon">LON: --</div>
+    <div style="font-weight:bold; border-bottom:1px solid #00ffcc; margin-bottom:8px; font-size: 12px; color: #00ffcc;">NODE_TELEMETRY</div>
+    
+    <div class="data-row"><span class="data-label">SOURCE:</span> <span id="pop-src" class="data-val">--</span></div>
+    <div class="data-row"><span class="data-label">TIMESTAMP:</span> <span id="pop-time" class="data-val">--</span></div>
+    
+    <div class="section-label">Spatial_Data</div>
+    <div class="data-row"><span class="data-label">LATITUDE:</span> <span id="pop-lat" class="data-val">--</span></div>
+    <div class="data-row"><span class="data-label">LONGITUDE:</span> <span id="pop-lon" class="data-val">--</span></div>
+    
+    <div class="section-label">Vector_Context</div>
+    <div class="data-row"><span class="data-label">X_COORD:</span> <span id="pop-x" class="data-val">--</span></div>
+    <div class="data-row"><span class="data-label">Z_COORD:</span> <span id="pop-z" class="data-val">--</span></div>
 </div>
 
 <div id="map-buffer"></div>
@@ -93,22 +105,22 @@
 
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(40, 60, 80);
+    camera.position.set(50, 70, 90);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
     const controls = new OrbitControls(camera, renderer.domElement);
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+    scene.add(new THREE.AmbientLight(0xffffff, 0.8));
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
-    const floor = new THREE.Mesh(new THREE.PlaneGeometry(500, 500), new THREE.MeshBasicMaterial({ map: mapTex }));
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(800, 800), new THREE.MeshBasicMaterial({ map: mapTex }));
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
     const sentry = new THREE.Group();
-    const pyr = new THREE.Mesh(new THREE.CylinderGeometry(0, 2.5, 5, 4), new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true }));
+    const pyr = new THREE.Mesh(new THREE.CylinderGeometry(0, 3, 6, 4), new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true, emissive: 0x00ffcc, emissiveIntensity: 0.2 }));
     pyr.rotation.x = Math.PI; sentry.add(pyr);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(3, 3.5, 32), new THREE.MeshBasicMaterial({ color: 0x00ffcc, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
+    const ring = new THREE.Mesh(new THREE.RingGeometry(3.5, 4, 32), new THREE.MeshBasicMaterial({ color: 0x00ffcc, side: THREE.DoubleSide, transparent: true, opacity: 0.4 }));
     ring.rotation.x = -Math.PI / 2; sentry.add(ring);
     sentry.position.y = 12;
     scene.add(sentry);
@@ -116,49 +128,24 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // --- VIEW RESET (PAN/TILT/ZOOM ONLY) ---
+    // RESET VIEW: ZOOM, PAN, TILT
     window.resetCameraView = () => {
         const startPos = camera.position.clone();
-        const endPos = sentry.position.clone().add(new THREE.Vector3(25, 45, 65));
+        const endPos = sentry.position.clone().add(new THREE.Vector3(30, 50, 70));
         const startTarget = controls.target.clone();
         const endTarget = sentry.position.clone();
 
         let startTime = null;
-        const duration = 750;
-
         function glide(time) {
             if (!startTime) startTime = time;
-            let progress = (time - startTime) / duration;
+            let progress = (time - startTime) / 800;
             if (progress > 1) progress = 1;
-            const ease = 1 - Math.pow(1 - progress, 3);
-
+            const ease = 1 - Math.pow(1 - progress, 4);
             camera.position.lerpVectors(startPos, endPos, ease);
             controls.target.lerpVectors(startTarget, endTarget, ease);
-
             if (progress < 1) requestAnimationFrame(glide);
         }
         requestAnimationFrame(glide);
-    };
-
-    window.exportToCSV = () => {
-        if (window.sessionData.length === 0) return alert("NO DATA.");
-        const csv = "t,lat,lon,src\n" + window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
-        const link = document.createElement("a");
-        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-        link.download = `SENTRY_LOG_${Date.now()}.csv`;
-        link.click();
-    };
-
-    window.importCSV = (event) => {
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const lines = e.target.result.split('\n').slice(1);
-            lines.forEach(line => {
-                const p = line.split(',');
-                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, 0x00ffcc, p[3] || "IMPORT");
-            });
-        };
-        reader.readAsText(event.target.files[0]);
     };
 
     window.setTracking = (state) => {
@@ -169,36 +156,39 @@
             sessionStartTime = Date.now();
             trackingInterval = setInterval(() => {
                 if (trackingState === 'START' && lastPosition) {
-                    const data = { t: new Date().toLocaleTimeString(), lat: lastPosition.lat, lon: lastPosition.lon, source: "LIVE" };
+                    const data = { t: new Date().toLocaleTimeString(), lat: lastPosition.lat, lon: lastPosition.lon, source: "LIVE_STREAM" };
                     window.sessionData.push(data);
-                    plot(data.lat, data.lon, data, 0xff0055, data.source);
+                    plot(data.lat, data.lon, data, 0xff0055);
                 }
             }, 1000);
-        } else if (state === 'STOP') { clearInterval(trackingInterval); trackingInterval = null; }
+        }
     };
 
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
             const { latitude: lat, longitude: lon } = pos.coords;
             lastPosition = { lat, lon };
-            document.getElementById('coords').innerText = `LAT: ${lat.toFixed(6)} LON: ${lon.toFixed(6)}`;
+            document.getElementById('coords').innerText = `SYS_LOC: ${lat.toFixed(5)}, ${lon.toFixed(5)}`;
             map.setCenter([lon, lat]);
         }, null, { enableHighAccuracy: true });
     }
 
-    function plot(lat, lon, data, color, source) {
+    function plot(lat, lon, data, color) {
         if (!startCoords) startCoords = { lat, lon };
         const dy = (lat - startCoords.lat) * 111111;
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
-        const node = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.3 }));
-        node.position.set(dx, 1.2, -dy);
         
-        // Ensure data is mapped correctly for the display logic
+        const node = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.4 }));
+        node.position.set(dx, 1.5, -dy);
+        
+        // STORE ENHANCED METADATA
         node.userData = { 
             t: data.t, 
-            lat: data.lat, 
-            lon: data.lon, 
-            source: source, 
+            lat: lat.toFixed(7), 
+            lon: lon.toFixed(7), 
+            x: dx.toFixed(2), 
+            z: (-dy).toFixed(2),
+            source: data.source, 
             baseColor: color, 
             targetScale: 1.0 
         };
@@ -213,32 +203,30 @@
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
         
-        const sentryHits = raycaster.intersectObject(pyr);
-        if (sentryHits.length > 0) {
+        if (raycaster.intersectObject(pyr).length > 0) {
             window.resetCameraView();
             return;
         }
 
         const hits = raycaster.intersectObjects(breadcrumbs.children);
         if (hits.length > 0) {
-            if (selectedNode) { 
-                selectedNode.userData.targetScale = 1.0; 
-                selectedNode.material.color.set(selectedNode.userData.baseColor); 
-            }
+            if (selectedNode) { selectedNode.userData.targetScale = 1.0; selectedNode.material.color.set(selectedNode.userData.baseColor); }
             selectedNode = hits[0].object;
-            selectedNode.userData.targetScale = 2.5;
-            selectedNode.material.color.set(0xFFD700);
+            selectedNode.userData.targetScale = 2.8;
+            selectedNode.material.color.set(0x00ffff);
 
-            // DATA DISPLAY FIX
+            // UPDATED POPUP CONTENT
             const popup = document.getElementById('node-popup');
             popup.style.display = 'block';
-            popup.style.left = e.clientX + 10 + "px";
-            popup.style.top = e.clientY + 10 + "px";
+            popup.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + "px";
+            popup.style.top = Math.min(e.clientY + 20, window.innerHeight - 200) + "px";
             
             document.getElementById('pop-src').innerText = selectedNode.userData.source;
-            document.getElementById('pop-time').innerText = "TIME: " + selectedNode.userData.t;
-            document.getElementById('pop-lat').innerText = "LAT: " + selectedNode.userData.lat;
-            document.getElementById('pop-lon').innerText = "LON: " + selectedNode.userData.lon;
+            document.getElementById('pop-time').innerText = selectedNode.userData.t;
+            document.getElementById('pop-lat').innerText = selectedNode.userData.lat;
+            document.getElementById('pop-lon').innerText = selectedNode.userData.lon;
+            document.getElementById('pop-x').innerText = selectedNode.userData.x + "m";
+            document.getElementById('pop-z').innerText = selectedNode.userData.z + "m";
         } else if (selectedNode) {
             selectedNode.userData.targetScale = 1.0;
             selectedNode.material.color.set(selectedNode.userData.baseColor);
@@ -250,11 +238,11 @@
     function animate() {
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
-        sentry.position.y = 10 + Math.sin(Date.now() * 0.002) * 2;
-        sentry.rotation.y += 0.02;
+        sentry.position.y = 11 + Math.sin(Date.now() * 0.002) * 2;
+        sentry.rotation.y += 0.03;
         
         breadcrumbs.children.forEach(n => {
-            n.scale.lerp(new THREE.Vector3(n.userData.targetScale, n.userData.targetScale, n.userData.targetScale), 0.1);
+            n.scale.lerp(new THREE.Vector3(n.userData.targetScale, n.userData.targetScale, n.userData.targetScale), 0.15);
         });
 
         if (sessionStartTime && trackingState === 'START') {
