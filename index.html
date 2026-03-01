@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | V27 Maintenance</title>
+    <title>Sentry Node | V28 Animated Lock</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -36,7 +36,6 @@
         button:hover { background: #003333; border-color: #00ffcc; }
         button.active-btn { background: #00ffcc; color: #000; font-weight: bold; border-color: #00ffcc; }
         
-        /* WARNING STYLE */
         .btn-warn { border-color: #ff3333; color: #ff3333; }
         .btn-warn:hover { background: #330000; border-color: #ff6666; color: #ff6666; }
     </style>
@@ -44,7 +43,7 @@
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px; letter-spacing: 2px;">SENTRY_OS_V27</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px; letter-spacing: 2px;">SENTRY_OS_V28</div>
     <div id="coords" style="margin-top:10px; font-size: 10px; color: #008888;">SYS_LOC: ACTIVE</div>
     
     <div class="section-label">TELEMETRY_ENGINE</div>
@@ -134,44 +133,27 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // MAINTENANCE: CLEAR IMPORTED FILES ONLY
     window.clearImports = () => {
         const toRemove = [];
-        breadcrumbs.children.forEach(node => {
-            if (node.userData.source === "CSV_IMPORT") toRemove.push(node);
-        });
+        breadcrumbs.children.forEach(node => { if (node.userData.source === "CSV_IMPORT") toRemove.push(node); });
         toRemove.forEach(node => breadcrumbs.remove(node));
         document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
-        console.log("IMPORTS PURGED");
     };
 
-    // MAINTENANCE: FULL SYSTEM RESET
     window.systemReset = () => {
-        if (!confirm("RESTORE SYSTEM TO FACTORY DEFAULTS? ALL DATA WILL BE LOST.")) return;
-        
-        // 1. Clear 3D nodes
+        if (!confirm("RESTORE SYSTEM?")) return;
         while(breadcrumbs.children.length > 0) breadcrumbs.remove(breadcrumbs.children[0]);
-        
-        // 2. Wipe Buffers
         window.sessionData = [];
         sessionStartTime = Date.now();
-        
-        // 3. Reset HUD
         document.getElementById('stream-nodes').innerText = "0";
         document.getElementById('stream-time').innerText = "00:00";
         document.getElementById('node-popup').style.display = 'none';
-        
-        // 4. View Reset
         window.resetCameraView();
-        console.log("FULL SYSTEM RESET COMPLETE");
     };
 
     window.resetCameraView = () => {
-        const startPos = camera.position.clone();
-        const endPos = sentry.position.clone().add(new THREE.Vector3(30, 50, 70));
-        const startTarget = controls.target.clone();
-        const endTarget = sentry.position.clone();
-
+        const startPos = camera.position.clone(), endPos = sentry.position.clone().add(new THREE.Vector3(30, 50, 70));
+        const startTarget = controls.target.clone(), endTarget = sentry.position.clone();
         let startTime = null;
         function glide(time) {
             if (!startTime) startTime = time;
@@ -186,7 +168,7 @@
     };
 
     window.exportToCSV = () => {
-        if (window.sessionData.length === 0) return alert("NO LIVE DATA TO EXPORT.");
+        if (window.sessionData.length === 0) return alert("NO DATA.");
         const csv = "t,lat,lon,src\n" + window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
         const link = document.createElement("a");
         link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
@@ -200,10 +182,7 @@
             const lines = e.target.result.split('\n').slice(1);
             lines.forEach(line => {
                 const p = line.split(',');
-                if (p.length >= 3) {
-                    const data = { t: p[0], lat: parseFloat(p[1]), lon: parseFloat(p[2]), source: "CSV_IMPORT" };
-                    plot(data.lat, data.lon, data, 0x00ccff);
-                }
+                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], source: "CSV_IMPORT" }, 0x00ccff);
             });
         };
         reader.readAsText(event.target.files[0]);
@@ -240,7 +219,15 @@
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
         const node = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.4 }));
         node.position.set(dx, 1.5, -dy);
-        node.userData = { t: data.t, lat: lat.toFixed(7), lon: lon.toFixed(7), x: dx.toFixed(2), z: (-dy).toFixed(2), source: data.source, baseColor: color, targetScale: 1.0 };
+        
+        // METADATA & ANIMATION DATA
+        node.userData = { 
+            t: data.t, lat: lat.toFixed(7), lon: lon.toFixed(7), 
+            x: dx.toFixed(2), z: (-dy).toFixed(2), 
+            source: data.source, baseColor: color, 
+            targetScale: 1.0  // Default state
+        };
+        
         breadcrumbs.add(node);
         sentry.position.set(dx, sentry.position.y, -dy);
         document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
@@ -250,17 +237,27 @@
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
+        
         if (raycaster.intersectObject(pyr).length > 0) { window.resetCameraView(); return; }
+        
         const hits = raycaster.intersectObjects(breadcrumbs.children);
         if (hits.length > 0) {
-            if (selectedNode) { selectedNode.userData.targetScale = 1.0; selectedNode.material.color.set(selectedNode.userData.baseColor); }
+            // DE-SELECT OLD NODE
+            if (selectedNode) { 
+                selectedNode.userData.targetScale = 1.0; 
+                selectedNode.material.color.set(selectedNode.userData.baseColor); 
+            }
+            
+            // SELECT NEW NODE
             selectedNode = hits[0].object;
-            selectedNode.userData.targetScale = 2.8;
-            selectedNode.material.color.set(0x00ffff);
+            selectedNode.userData.targetScale = 2.8; // ANIMATE BIGGER
+            selectedNode.material.color.set(0x00ffff); // LOCK COLOR
+
             const popup = document.getElementById('node-popup');
             popup.style.display = 'block';
             popup.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + "px";
             popup.style.top = Math.min(e.clientY + 20, window.innerHeight - 200) + "px";
+            
             document.getElementById('pop-src').innerText = selectedNode.userData.source;
             document.getElementById('pop-time').innerText = selectedNode.userData.t;
             document.getElementById('pop-lat').innerText = selectedNode.userData.lat;
@@ -268,6 +265,7 @@
             document.getElementById('pop-x').innerText = selectedNode.userData.x + "m";
             document.getElementById('pop-z').innerText = selectedNode.userData.z + "m";
         } else if (selectedNode) {
+            // RETURN TO NORMAL STATE
             selectedNode.userData.targetScale = 1.0;
             selectedNode.material.color.set(selectedNode.userData.baseColor);
             selectedNode = null;
@@ -280,7 +278,14 @@
         if (mapLoaded) mapTex.needsUpdate = true;
         sentry.position.y = 11 + Math.sin(Date.now() * 0.002) * 2;
         sentry.rotation.y += 0.03;
-        breadcrumbs.children.forEach(n => n.scale.lerp(new THREE.Vector3(n.userData.targetScale, n.userData.targetScale, n.userData.targetScale), 0.15));
+        
+        // ANIMATION LOOP FOR NODES
+        breadcrumbs.children.forEach(n => {
+            const ts = n.userData.targetScale;
+            // Smoothly interpolate scale
+            n.scale.lerp(new THREE.Vector3(ts, ts, ts), 0.15);
+        });
+
         if (sessionStartTime && trackingState === 'START') {
             const diff = Math.floor((Date.now() - sessionStartTime) / 1000);
             document.getElementById('stream-time').innerText = `${Math.floor(diff/60).toString().padStart(2,'0')}:${(diff%60).toString().padStart(2,'0')}`;
