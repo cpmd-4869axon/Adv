@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Data Persistence</title>
+    <title>Sentry Node | Diagnostic HUD</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -18,10 +18,16 @@
         }
         .stream-val { color: #fff; font-weight: bold; float: right; }
 
+        /* ADVANCED DIAGNOSTIC POPUP */
         #node-popup { 
-            position: absolute; display: none; background: rgba(0, 30, 30, 0.9); 
-            border: 1px solid #00ffcc; color: #00ffcc; padding: 10px; z-index: 200; pointer-events: none;
+            position: absolute; display: none; background: rgba(0, 20, 20, 0.95); 
+            border: 1px solid #00ffcc; color: #00ffcc; padding: 12px; z-index: 200; 
+            pointer-events: none; width: 220px; box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
         }
+        .pop-header { font-weight: bold; border-bottom: 1px solid #00ffcc; margin-bottom: 8px; font-size: 12px; }
+        .pop-row { font-size: 10px; margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .pop-label { color: #888; }
+        .pop-val { color: #fff; }
 
         .section-label { font-size: 11px; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #004444; padding-bottom: 3px; }
         .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
@@ -30,13 +36,12 @@
                          cursor: pointer; font-family: monospace; font-size: 11px; width: 100%; margin-top: 5px; }
         button:hover { background: #004444; }
         button.active-btn { background: #00ffcc; color: #000; font-weight: bold; }
-        #btn-export { border-color: #ffcc00; color: #ffcc00; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V19</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V20</div>
     <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: STANDBY</div>
     
     <div class="section-label">TELEMETRY CONTROL</div>
@@ -47,20 +52,24 @@
     </div>
 
     <div class="section-label">DATA ARCHIVE</div>
-    <button id="btn-export" onclick="exportToCSV()">EXPORT SESSION (CSV)</button>
+    <button id="btn-export" onclick="exportToCSV()" style="border-color:#ffcc00; color:#ffcc00;">EXPORT SESSION</button>
     <input type="file" id="csv-import" accept=".csv" onchange="importCSV(event)" style="display:none">
-    <button onclick="document.getElementById('csv-import').click()">IMPORT DATA (CSV)</button>
+    <button onclick="document.getElementById('csv-import').click()">IMPORT DATA</button>
 </div>
 
 <div id="stream-hud">
-    <div style="border-bottom: 1px solid #004444; margin-bottom: 8px; padding-bottom: 4px; font-weight: bold;">Telemetry Stream</div>
-    <div>Nodes Collected: <span id="stream-nodes" class="stream-val">0</span></div>
-    <div style="margin-top: 5px;">Session Time: <span id="stream-time" class="stream-val">00:00</span></div>
+    <div style="border-bottom: 1px solid #004444; margin-bottom: 8px; padding-bottom: 4px; font-weight: bold;">Session Meta</div>
+    <div>Nodes: <span id="stream-nodes" class="stream-val">0</span></div>
+    <div style="margin-top: 5px;">Time: <span id="stream-time" class="stream-val">00:00</span></div>
 </div>
 
 <div id="node-popup">
-    <div id="pop-src" style="font-weight:bold; border-bottom:1px solid #00ffcc;">--</div>
-    <div id="pop-time">--</div>
+    <div class="pop-header" id="pop-src">SOURCE_IDENTIFIER</div>
+    <div class="pop-row"><span class="pop-label">TIMESTAMP:</span> <span class="pop-val" id="pop-time">--</span></div>
+    <div class="pop-row"><span class="pop-label">LATITUDE:</span> <span class="pop-val" id="pop-lat">--</span></div>
+    <div class="pop-row"><span class="pop-label">LONGITUDE:</span> <span class="pop-val" id="pop-lon">--</span></div>
+    <div class="pop-row"><span class="pop-label">REL_DIST:</span> <span class="pop-val" id="pop-dist">--</span></div>
+    <div class="pop-row"><span class="pop-label">INDEX:</span> <span class="pop-val" id="pop-idx">--</span></div>
 </div>
 
 <div id="map-buffer"></div>
@@ -80,7 +89,7 @@
     let trackingInterval = null, sessionStartTime = null;
     const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
     let selectedNode = null, mapLoaded = false;
-    let sessionData = []; // Storage for CSV export
+    let sessionData = [];
 
     const map = new maplibregl.Map({
         container: 'map-buffer',
@@ -115,33 +124,7 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // --- DATA HANDLING ---
-    window.exportToCSV = () => {
-        if (sessionData.length === 0) return alert("No data to export.");
-        let csvContent = "data:text/csv;charset=utf-8,time,lat,lon,source\n" 
-            + sessionData.map(e => `${e.t},${e.lat},${e.lon},${e.source}`).join("\n");
-        const encodedUri = encodeURI(csvContent);
-        const link = document.createElement("a");
-        link.setAttribute("href", encodedUri);
-        link.setAttribute("download", `sentry_log_${Date.now()}.csv`);
-        document.body.appendChild(link);
-        link.click();
-    };
-
-    window.importCSV = (event) => {
-        const file = event.target.files[0];
-        if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (e) => {
-            const lines = e.target.result.split('\n').slice(1);
-            lines.forEach(line => {
-                const [t, lat, lon, source] = line.split(',');
-                if (lat && lon) plot(parseFloat(lat), parseFloat(lon), { t, lat, lon }, 0x00ffcc, source || "IMPORTED");
-            });
-        };
-        reader.readAsText(file);
-    };
-
+    // --- TRACKING LOGIC ---
     window.setTracking = (state) => {
         trackingState = state;
         document.querySelectorAll('.control-grid button').forEach(b => b.classList.remove('active-btn'));
@@ -150,13 +133,13 @@
             sessionStartTime = Date.now();
             trackingInterval = setInterval(() => {
                 if (trackingState === 'START' && lastPosition) {
-                    const data = { t: new Date().toLocaleTimeString(), lat: lastPosition.lat, lon: lastPosition.lon, source: "LIVE_SESSION" };
+                    const data = { t: new Date().toLocaleTimeString(), lat: lastPosition.lat, lon: lastPosition.lon, source: "LIVE_STREAM" };
                     sessionData.push(data);
                     plot(data.lat, data.lon, data, 0xff0055, data.source);
                 }
             }, 1000);
         } else if (state === 'STOP') {
-            clearInterval(trackingInterval); trackingInterval = null; sessionStartTime = null;
+            clearInterval(trackingInterval); trackingInterval = null;
         }
     };
 
@@ -178,18 +161,19 @@
             new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.2 })
         );
         node.position.set(dx, 1.0, -dy);
-        node.userData = { ...data, source, baseColor: color, targetScale: 1.0 };
+        node.userData = { ...data, source, baseColor: color, targetScale: 1.0, idx: breadcrumbs.children.length };
         breadcrumbs.add(node);
         sentry.position.set(dx, sentry.position.y, -dy);
         document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
     }
 
-    // Interaction & Animation Logic (Selection color logic from V18 included)
+    // --- INTERACTION ---
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
         const hits = raycaster.intersectObjects(breadcrumbs.children);
+        
         if (hits.length > 0) {
             if (selectedNode) { 
                 selectedNode.userData.targetScale = 1.0; 
@@ -200,9 +184,18 @@
             selectedNode.userData.targetScale = 2.5;
             selectedNode.material.wireframe = true;
             selectedNode.material.color.set(0xFFD700);
+            
+            // Calculate Distance to Sentry
+            const dist = selectedNode.position.distanceTo(sentry.position).toFixed(2);
+            
+            // Update HUD
             document.getElementById('node-popup').style.display = 'block';
             document.getElementById('pop-src').innerText = selectedNode.userData.source;
-            document.getElementById('pop-time').innerText = "T: " + selectedNode.userData.t;
+            document.getElementById('pop-time').innerText = selectedNode.userData.t;
+            document.getElementById('pop-lat').innerText = parseFloat(selectedNode.userData.lat).toFixed(5);
+            document.getElementById('pop-lon').innerText = parseFloat(selectedNode.userData.lon).toFixed(5);
+            document.getElementById('pop-dist').innerText = dist + "m";
+            document.getElementById('pop-idx').innerText = "#" + selectedNode.userData.idx;
         } else if (selectedNode) {
             selectedNode.userData.targetScale = 1.0;
             selectedNode.material.wireframe = false;
@@ -226,10 +219,6 @@
             const pop = document.getElementById('node-popup');
             pop.style.left = ((vector.x + 1) / 2 * window.innerWidth + 20) + 'px';
             pop.style.top = (-(vector.y - 1) / 2 * window.innerHeight - 40) + 'px';
-        }
-        if (sessionStartTime && trackingState === 'START') {
-            const diff = Math.floor((Date.now() - sessionStartTime) / 1000);
-            document.getElementById('stream-time').innerText = `${Math.floor(diff/60).toString().padStart(2,'0')}:${(diff%60).toString().padStart(2,'0')}`;
         }
         controls.update();
         renderer.render(scene, camera);
