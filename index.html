@@ -2,23 +2,37 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | GPS Data Plotter</title>
+    <title>Sentry Node | Multispectral Map Interface</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        body { margin: 0; background: #020406; overflow: hidden; font-family: monospace; }
+        body { margin: 0; background: #020406; overflow: hidden; font-family: 'Courier New', monospace; }
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
-               background: rgba(0,15,15,0.9); padding: 15px; z-index: 100; pointer-events: none; }
+               background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; pointer-events: auto; width: 220px; }
         .stat { font-size: 11px; color: #008888; margin-top: 4px; }
+        .section-label { font-size: 10px; color: #00ffcc; margin-top: 10px; border-bottom: 1px solid #004444; padding-bottom: 2px; }
+        select, button { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 5px; 
+                         cursor: pointer; font-family: monospace; font-size: 11px; margin-top: 5px; width: 100%; }
+        button:hover { background: #00ffcc; color: #002222; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; letter-spacing: 1px;">SENTRY_TRACKER_V4</div>
-    <div id="coords">WAITING FOR GPS...</div>
-    <div class="stat" id="nodes">NODES PLOTTED: 0</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px;">SENTRY_OS_V6</div>
+    <div id="coords" style="margin-top:8px;">SEARCHING GPS...</div>
+    <div class="stat" id="nodes">ACTIVE NODES: 0</div>
+    
+    <div class="section-label">MAP INTERFACE</div>
+    <select id="mapStyle" onchange="changeMapStyle()">
+        <option value="https://demotiles.maplibre.org/style.json">Tactical Vector</option>
+        <option value="https://tiles.openfreemap.org/styles/dark">Stealth Dark</option>
+        <option value="https://tiles.openfreemap.org/styles/liberty">Standard Liberty</option>
+    </select>
+
+    <div class="section-label">DATA COMMAND</div>
+    <button onclick="exportToCSV()">EXPORT TRAJECTORY (CSV)</button>
 </div>
 
 <div id="map-buffer"></div>
@@ -34,8 +48,12 @@
     import * as THREE from 'three';
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
-    // --- 1. GEOSPATIAL ENGINE ---
+    // --- DATA & LOGGING ---
+    window.gpsHistory = [];
     let startCoords = null;
+    let lastLoggedTime = 0;
+
+    // --- 1. MAP ENGINE (Invisible Buffer) ---
     const map = new maplibregl.Map({
         container: 'map-buffer',
         style: 'https://demotiles.maplibre.org/style.json',
@@ -45,107 +63,114 @@
         preserveDrawingBuffer: true 
     });
 
-    // --- 2. THREE.JS SCENE ---
+    window.changeMapStyle = function() {
+        const styleUrl = document.getElementById('mapStyle').value;
+        map.setStyle(styleUrl);
+    };
+
+    // --- 2. THREE.JS ENGINE ---
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x020406);
-    
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
-    camera.position.set(20, 30, 40);
-
+    camera.position.set(25, 35, 45);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     document.body.appendChild(renderer.domElement);
-
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Lighting for Solid Objects
     scene.add(new THREE.AmbientLight(0xffffff, 0.5));
-    const sun = new THREE.DirectionalLight(0xffffff, 1);
-    sun.position.set(10, 20, 10);
+    const sun = new THREE.DirectionalLight(0xffffff, 1.2);
+    sun.position.set(15, 30, 15);
     scene.add(sun);
 
-    // --- 3. THE SYNCED FLOOR ---
+    // --- 3. DYNAMIC WORLD FLOOR ---
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
+    mapTex.minFilter = THREE.LinearFilter;
     const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(200, 200),
-        new THREE.MeshBasicMaterial({ map: mapTex })
+        new THREE.PlaneGeometry(300, 300), 
+        new THREE.MeshBasicMaterial({ map: mapTex, side: THREE.DoubleSide })
     );
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // --- 4. THE SENTRY (TRIANGLE) ---
+    // --- 4. SENTRY UNIT (SOLID TRIANGLE) ---
     const sentry = new THREE.Group();
     const pyramid = new THREE.Mesh(
-        new THREE.CylinderGeometry(0, 1.5, 3, 4),
-        new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true })
+        new THREE.CylinderGeometry(0, 1.8, 3.5, 4), 
+        new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true, metalness: 0.3 })
     );
     pyramid.rotation.x = Math.PI; 
     sentry.add(pyramid);
-
-    // Pulsing Ring (Scaling version)
+    
     const ring = new THREE.Mesh(
-        new THREE.RingGeometry(2, 2.3, 64),
+        new THREE.RingGeometry(2.5, 3, 64), 
         new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, side: THREE.DoubleSide })
     );
     ring.rotation.x = -Math.PI / 2;
     sentry.add(ring);
     scene.add(sentry);
 
-    // --- 5. DATA COLLECTION: BREADCRUMBS ---
+    // --- 5. DATA PLOTTER (SPHERES) ---
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
+    const sphereGeo = new THREE.SphereGeometry(0.5, 16, 16);
+    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0x440000 });
 
-    const sphereGeo = new THREE.SphereGeometry(0.4, 16, 16);
-    const sphereMat = new THREE.MeshStandardMaterial({ color: 0xff0055, emissive: 0x330000 });
+    function logAndPlot(lat, lon) {
+        const now = Date.now();
+        if (now - lastLoggedTime >= 1000) {
+            lastLoggedTime = now;
+            window.gpsHistory.push({ timestamp: new Date().toISOString(), lat, lon });
 
-    function dropBreadcrumb(lat, lon) {
-        if (!startCoords) {
-            startCoords = { lat, lon };
-            return;
+            if (!startCoords) {
+                startCoords = { lat, lon };
+            } else {
+                const dy = (lat - startCoords.lat) * 111111;
+                const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
+                const node = new THREE.Mesh(sphereGeo, sphereMat);
+                node.position.set(dx, 0.5, -dy);
+                breadcrumbs.add(node);
+            }
+            document.getElementById('nodes').innerText = `ACTIVE NODES: ${window.gpsHistory.length}`;
+            document.getElementById('coords').innerText = `LAT: ${lat.toFixed(6)} LON: ${lon.toFixed(6)}`;
         }
-
-        // Calculate relative position (approximate meters)
-        // 1 degree lat is ~111,111 meters. 1 degree lon is ~111,111 * cos(lat).
-        const dy = (lat - startCoords.lat) * 111111;
-        const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
-
-        const node = new THREE.Mesh(sphereGeo, sphereMat);
-        // Note: dy is mapped to -Z in Three.js coordinates
-        node.position.set(dx, 0.5, -dy); 
-        breadcrumbs.add(node);
-        
-        document.getElementById('nodes').innerText = `NODES PLOTTED: ${breadcrumbs.children.length}`;
     }
 
-    // --- 6. GPS WATCH ---
     if ("geolocation" in navigator) {
         navigator.geolocation.watchPosition(pos => {
             const { latitude, longitude } = pos.coords;
-            document.getElementById('coords').innerText = `LAT: ${latitude.toFixed(6)} LON: ${longitude.toFixed(6)}`;
-            
             map.setCenter([longitude, latitude]);
-            dropBreadcrumb(latitude, longitude);
-
+            logAndPlot(latitude, longitude);
         }, null, { enableHighAccuracy: true });
     }
 
-    // --- 7. ANIMATION ---
+    window.exportToCSV = function() {
+        if (window.gpsHistory.length === 0) return alert("NO DATA CAPTURED.");
+        let csv = "Timestamp,Latitude,Longitude\n" + window.gpsHistory.map(e => `${e.timestamp},${e.lat},${e.lon}`).join("\n");
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `sentry_log_${Date.now()}.csv`;
+        a.click();
+    };
+
+    // --- 6. ANIMATION LOOP ---
     function animate() {
         requestAnimationFrame(animate);
         const time = Date.now() * 0.001;
-
         if (map.loaded()) mapTex.needsUpdate = true;
 
-        // Bob & Spin
-        sentry.position.y = 2 + Math.sin(time * 3) * 0.5;
-        sentry.rotation.y += 0.01;
+        // Bobbing & Spin
+        sentry.position.y = 2.5 + Math.sin(time * 3) * 0.7;
+        sentry.rotation.y += 0.015;
 
-        // Scaling Pulse Ring
-        const pulse = (Math.sin(time * 5) + 1) / 2;
-        const s = 0.5 + (pulse * 1.5);
-        ring.scale.set(s, s, 1);
-        ring.material.opacity = 1 - pulse;
+        // Growing Pulse Ring
+        const pFactor = (Math.sin(time * 4.5) + 1) / 2;
+        const scale = 0.6 + (pFactor * 1.8);
+        ring.scale.set(scale, scale, 1);
+        ring.material.opacity = 1 - pFactor;
 
         controls.update();
         renderer.render(scene, camera);
