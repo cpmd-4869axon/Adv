@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Tactical View Reset</title>
+    <title>Sentry Node | V24</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -35,8 +35,8 @@
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V23</div>
-    <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: TRACKING</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V24</div>
+    <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: ACTIVE</div>
     
     <div class="section-label">TELEMETRY CONTROL</div>
     <div class="control-grid">
@@ -49,8 +49,6 @@
     <button onclick="exportToCSV()" style="border-color:#ffcc00; color:#ffcc00;">EXPORT SESSION</button>
     <input type="file" id="csv-import" accept=".csv" onchange="importCSV(event)" style="display:none">
     <button onclick="document.getElementById('csv-import').click()">IMPORT DATA</button>
-    
-    <div style="font-size: 9px; color: #00ffcc; margin-top: 15px; text-align: center; opacity: 0.6;">TAP SENTRY TO RE-CENTER CAMERA</div>
 </div>
 
 <div id="stream-hud">
@@ -60,8 +58,10 @@
 </div>
 
 <div id="node-popup">
-    <div class="pop-header" id="pop-src" style="font-weight:bold; border-bottom:1px solid #00ffcc;">SOURCE</div>
-    <div style="font-size: 10px;" id="pop-time">--</div>
+    <div class="pop-header" id="pop-src" style="font-weight:bold; border-bottom:1px solid #00ffcc; margin-bottom:5px;">SOURCE</div>
+    <div style="font-size: 10px;" id="pop-time">TIME: --</div>
+    <div style="font-size: 10px;" id="pop-lat">LAT: --</div>
+    <div style="font-size: 10px;" id="pop-lon">LON: --</div>
 </div>
 
 <div id="map-buffer"></div>
@@ -116,23 +116,20 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // --- VIEW INTERACTION: PAN, TILT, ZOOM ---
+    // --- VIEW RESET (PAN/TILT/ZOOM ONLY) ---
     window.resetCameraView = () => {
-        // Snap Target to Sentry
         const startPos = camera.position.clone();
-        const endPos = sentry.position.clone().add(new THREE.Vector3(20, 40, 60));
+        const endPos = sentry.position.clone().add(new THREE.Vector3(25, 45, 65));
         const startTarget = controls.target.clone();
         const endTarget = sentry.position.clone();
 
         let startTime = null;
-        const duration = 800; // ms for smooth glide
+        const duration = 750;
 
         function glide(time) {
             if (!startTime) startTime = time;
             let progress = (time - startTime) / duration;
             if (progress > 1) progress = 1;
-
-            // Ease Out Cubic
             const ease = 1 - Math.pow(1 - progress, 3);
 
             camera.position.lerpVectors(startPos, endPos, ease);
@@ -195,7 +192,17 @@
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
         const node = new THREE.Mesh(new THREE.SphereGeometry(1.2, 16, 16), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.3 }));
         node.position.set(dx, 1.2, -dy);
-        node.userData = { ...data, source, baseColor: color, targetScale: 1.0 };
+        
+        // Ensure data is mapped correctly for the display logic
+        node.userData = { 
+            t: data.t, 
+            lat: data.lat, 
+            lon: data.lon, 
+            source: source, 
+            baseColor: color, 
+            targetScale: 1.0 
+        };
+        
         breadcrumbs.add(node);
         sentry.position.set(dx, sentry.position.y, -dy);
         document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
@@ -206,7 +213,6 @@
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
         
-        // INTERCEPT SENTRY TAP
         const sentryHits = raycaster.intersectObject(pyr);
         if (sentryHits.length > 0) {
             window.resetCameraView();
@@ -215,12 +221,24 @@
 
         const hits = raycaster.intersectObjects(breadcrumbs.children);
         if (hits.length > 0) {
-            if (selectedNode) { selectedNode.userData.targetScale = 1.0; selectedNode.material.color.set(selectedNode.userData.baseColor); }
+            if (selectedNode) { 
+                selectedNode.userData.targetScale = 1.0; 
+                selectedNode.material.color.set(selectedNode.userData.baseColor); 
+            }
             selectedNode = hits[0].object;
             selectedNode.userData.targetScale = 2.5;
             selectedNode.material.color.set(0xFFD700);
-            document.getElementById('node-popup').style.display = 'block';
+
+            // DATA DISPLAY FIX
+            const popup = document.getElementById('node-popup');
+            popup.style.display = 'block';
+            popup.style.left = e.clientX + 10 + "px";
+            popup.style.top = e.clientY + 10 + "px";
+            
             document.getElementById('pop-src').innerText = selectedNode.userData.source;
+            document.getElementById('pop-time').innerText = "TIME: " + selectedNode.userData.t;
+            document.getElementById('pop-lat').innerText = "LAT: " + selectedNode.userData.lat;
+            document.getElementById('pop-lon').innerText = "LON: " + selectedNode.userData.lon;
         } else if (selectedNode) {
             selectedNode.userData.targetScale = 1.0;
             selectedNode.material.color.set(selectedNode.userData.baseColor);
