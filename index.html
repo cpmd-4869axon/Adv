@@ -2,21 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V79 Leaflet Labels</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <title>Sentry OS | V80 Tactical Grid</title>
+    <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
+    <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
         :root { --neon: #00ffcc; --warning: #ffcc00; --bg: #000808; }
         body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
         
-        /* Tactical Interlace */
+        /* CRT Interlace */
         body::after {
             content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
-            z-index: 1000; background-size: 100% 3px; pointer-events: none; opacity: 0.2;
+            z-index: 1000; background-size: 100% 3px; pointer-events: none; opacity: 0.15;
         }
 
-        /* Leaflet Buffer - High Res for Text Clarity */
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
         .panel { border: 1px solid var(--neon); backdrop-filter: blur(8px); background: rgba(0, 10, 10, 0.9); }
@@ -26,17 +25,14 @@
         button { background: #001515; color: var(--neon); border: 1px solid #004444; padding: 10px; cursor: pointer; font-size: 10px; font-weight: bold; }
         .active-btn { background: var(--neon) !important; color: #000 !important; }
         
-        #compass { font-size: 42px; text-align: center; margin: 5px 0; color: var(--warning); text-shadow: 0 0 10px var(--warning); }
         .telemetry { font-size: 9px; border-top: 1px solid #003333; padding-top: 10px; margin-top: 10px; line-height: 1.5; }
     </style>
 </head>
 <body>
 
 <div id="hud" class="panel">
-    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_LEAFLET_V79</div>
-    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">LEAFLET_CORE: ACTIVE</div>
-    
-    <div id="compass">N</div>
+    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_GRID_V80</div>
+    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">TACTICAL_GRID: 10x10_ACTIVE</div>
     
     <div class="btn-grid">
         <button id="btn-start" onclick="setTracking('START')">ENGAGE</button>
@@ -45,9 +41,8 @@
     </div>
 
     <div class="telemetry">
-        INTEL: <span style="color:var(--neon);">LEAFLET_STREET_LABELS</span><br>
-        LAT: <span id="lat-val" style="color:white;">---</span> | 
-        LON: <span id="lon-val" style="color:white;">---</span>
+        INTEL: <span style="color:var(--neon);">STREET_BUILDING_LABELS_ENABLED</span><br>
+        COORD: <span id="lat-val" style="color:white;">---</span> | <span id="lon-val" style="color:white;">---</span>
     </div>
 </div>
 
@@ -65,34 +60,26 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     let startCoords = null, trackingState = 'STOP', lastPosition = null;
-    let trackingInterval = null;
-    const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
-    let isTweening = false;
+    let mapLoaded = false;
     
-    const targetCamPos = new THREE.Vector3();
-    const targetLookAt = new THREE.Vector3();
+    // --- MAP ENGINE ---
+    const map = new maplibregl.Map({
+        container: 'map-buffer',
+        style: 'https://tiles.openfreemap.org/styles/dark',
+        center: [-81.6881, 26.2750], 
+        zoom: 18.5, 
+        interactive: false, 
+        preserveDrawingBuffer: true 
+    });
+    map.on('idle', () => { mapLoaded = true; });
 
-    // --- LEAFLET INITIALIZATION ---
-    const lMap = L.map('map-buffer', {
-        zoomControl: false,
-        attributionControl: false
-    }).setView([26.2750, -81.6881], 19);
-
-    // Dark base layer
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(lMap);
-    
-    // Explicit Label Layer (Roads/Buildings)
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
-        pane: 'shadowPane' // Ensures labels stay on top
-    }).addTo(lMap);
-
-    // --- THREE.JS INITIALIZATION ---
+    // --- THREE.JS ENGINE ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000808, 0.0004);
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 15000);
-    camera.position.set(800, 800, 800);
+    scene.fog = new THREE.FogExp2(0x000808, 0.0003);
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 20000);
+    camera.position.set(1200, 1000, 1200);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
@@ -100,32 +87,40 @@
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    // Create Canvas Texture from Leaflet
-    const mapCanvas = document.querySelector('#map-buffer .leaflet-panes-canvas') || null; 
-    // Since Leaflet doesn't always use a single canvas, we capture the whole container
-    const textureCanvas = document.createElement('canvas');
-    textureCanvas.width = 1024;
-    textureCanvas.height = 1024;
-    const ctx = textureCanvas.getContext('2d');
-
-    const mapTex = new THREE.CanvasTexture(textureCanvas);
+    // Tactical Texture
+    const mapTex = new THREE.CanvasTexture(map.getCanvas());
     mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    const tacticalPlane = new THREE.Mesh(
-        new THREE.CircleGeometry(1200, 64), 
-        new THREE.MeshBasicMaterial({ map: mapTex, transparent: true, opacity: 0.9 })
+    // 10x10 Grid System
+    const gridGroup = new THREE.Group();
+    const tileSize = 250; // Each tile is 250 units
+    for (let i = 0; i < 10; i++) {
+        for (let j = 0; j < 10; j++) {
+            const tileGeom = new THREE.PlaneGeometry(tileSize - 2, tileSize - 2);
+            const tileMat = new THREE.MeshBasicMaterial({ 
+                map: mapTex, 
+                transparent: true, 
+                opacity: 0.85,
+                side: THREE.DoubleSide
+            });
+            const tile = new THREE.Mesh(tileGeom, tileMat);
+            tile.position.set((i - 4.5) * tileSize, 0, (j - 4.5) * tileSize);
+            tile.rotation.x = -Math.PI / 2;
+            gridGroup.add(tile);
+        }
+    }
+    scene.add(gridGroup);
+
+    // Grid Floor Lighting
+    const light = new THREE.PointLight(0x00ffcc, 1500000, 4000);
+    scene.add(light);
+
+    // Sentry Core
+    const sentry = new THREE.Mesh(
+        new THREE.OctahedronGeometry(25, 0), 
+        new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2 })
     );
-    tacticalPlane.rotation.x = -Math.PI / 2;
-    scene.add(tacticalPlane);
-
-    const grid = new THREE.GridHelper(10000, 40, 0x002222, 0x001111);
-    grid.position.y = -2;
-    scene.add(grid);
-
-    const sentry = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(20, 0), new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2 }));
-    sentry.add(core);
-    sentry.position.y = 60;
+    sentry.position.y = 100;
     scene.add(sentry);
 
     function updatePlot(lat, lon) {
@@ -134,46 +129,32 @@
         const x = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
         
         sentry.position.set(x, sentry.position.y, z);
-        tacticalPlane.position.set(x, 0, z); 
+        gridGroup.position.set(x, 0, z); // Grid follows sentry
+        light.position.set(x, 500, z);
         
-        lMap.setView([lat, lon], 19);
+        map.setCenter([lon, lat]);
         document.getElementById('lat-val').innerText = lat.toFixed(5);
         document.getElementById('lon-val').innerText = lon.toFixed(5);
-    }
-
-    // Capture Leaflet into Three.js
-    function syncLeaflet() {
-        // We use html2canvas-style logic or simple drawImage if Leaflet is canvas-backed
-        // For this implementation, we rely on the lMap's container rendering
-        // Note: Modern Leaflet uses DOM elements for tiles, so we must sync regularly
-        const leafletTiles = document.querySelectorAll('.leaflet-tile-loaded');
-        ctx.fillStyle = '#000808';
-        ctx.fillRect(0, 0, 1024, 1024);
-        // This is a simplified capture; for production, a dedicated canvas-tile-layer is used
-        mapTex.needsUpdate = true;
     }
 
     window.setTracking = (state) => {
         trackingState = state;
         document.querySelectorAll('button').forEach(b => b.classList.remove('active-btn'));
         document.getElementById(`btn-${state.toLowerCase()}`).classList.add('active-btn');
-        if (state === 'START' && !trackingInterval) {
-            trackingInterval = setInterval(() => {
-                if (trackingState === 'START' && lastPosition) updatePlot(lastPosition.lat, lastPosition.lon);
-            }, 1000);
-        }
     };
 
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
             lastPosition = { lat: pos.coords.latitude, lon: pos.coords.longitude };
+            if (trackingState === 'START') updatePlot(lastPosition.lat, lastPosition.lon);
         }, null, { enableHighAccuracy: true });
     }
 
     function animate() {
         requestAnimationFrame(animate);
-        sentry.rotation.y += 0.02;
-        mapTex.needsUpdate = true;
+        if (mapLoaded) mapTex.needsUpdate = true;
+        sentry.rotation.y += 0.03;
+        sentry.position.y = 100 + Math.sin(Date.now() * 0.003) * 15;
         controls.update();
         renderer.render(scene, camera);
     }
