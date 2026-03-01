@@ -2,38 +2,75 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V46 Strategic</title>
+    <title>Sentry Node | V34 Vector Core</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        :root { --neon: #00ffcc; --warning: #ffcc00; --bg: #000a0a; }
-        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
+        body { margin: 0; background: #000; overflow: hidden; font-family: 'Courier New', monospace; color: #00ffcc; }
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
-        .panel { background: rgba(0, 15, 15, 0.9); border: 1px solid var(--neon); backdrop-filter: blur(5px); }
-        #hud { position: absolute; top: 20px; left: 20px; padding: 20px; z-index: 100; width: 300px; border-radius: 0 20px 0 20px; border-left: 5px solid var(--neon); }
+        /* Tactical HUD */
+        #hud { position: absolute; top: 20px; left: 20px; border: 1px solid #00ffcc; background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 280px; border-radius: 0 15px 0 15px; box-shadow: 0 0 20px rgba(0,255,204,0.2); }
+        #stream-hud { position: absolute; top: 20px; right: 20px; border: 1px solid #00ffcc; background: rgba(0,10,10,0.85); padding: 12px; z-index: 100; width: 200px; font-size: 11px; }
         
-        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 15px; }
-        button { background: #001f1f; color: var(--neon); border: 1px solid #005555; padding: 12px; cursor: pointer; font-family: inherit; font-size: 11px; transition: 0.2s; }
-        button:hover { background: var(--neon); color: #000; }
-        .active-btn { background: var(--neon) !important; color: #000 !important; font-weight: bold; }
+        /* Node Interrogation Terminal */
+        #node-terminal { 
+            position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%); display: none; 
+            background: rgba(0, 5, 5, 0.98); border: 1px solid #00ffcc; padding: 20px; z-index: 200; 
+            width: 450px; border-top: 4px solid #00ffcc; box-shadow: 0 -10px 30px rgba(0,0,0,0.9);
+        }
+        .term-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .term-row { display: flex; justify-content: space-between; font-size: 12px; border-bottom: 1px solid #003333; padding-bottom: 4px; }
+        .label { color: #008888; text-transform: uppercase; font-size: 10px; }
+        .value { color: #fff; font-weight: bold; }
+
+        /* Controls */
+        .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; margin-top: 12px; }
+        button { background: #001a1a; color: #00ffcc; border: 1px solid #005555; padding: 10px; cursor: pointer; font-family: inherit; font-size: 10px; transition: 0.3s; }
+        button:hover { background: #00ffcc; color: #000; }
+        .active-btn { background: #00ffcc; color: #000; font-weight: bold; box-shadow: 0 0 10px #00ffcc; }
+        .btn-io { border-color: #ffcc00; color: #ffcc00; margin-top: 8px; width: 100%; }
         
-        #compass { font-size: 28px; text-align: center; margin: 10px 0; color: var(--warning); font-weight: bold; }
+        #compass { font-size: 24px; text-align: center; margin-top: 10px; color: #ffcc00; text-shadow: 0 0 5px #ffcc00; }
     </style>
 </head>
 <body>
 
-<div id="hud" class="panel">
-    <div style="font-weight: bold; font-size: 20px; letter-spacing: 3px; border-bottom: 2px solid var(--neon); padding-bottom: 8px;">SENTRY_OS_V46</div>
-    <div id="coords" style="margin-top:12px; font-size: 10px; color: #00cccc;">WIDE_ANGLE_ACTIVE</div>
+<div id="hud">
+    <div style="font-weight: bold; border-bottom: 2px solid #00ffcc; padding-bottom: 6px; font-size: 18px; letter-spacing: 2px;">SENTRY_OS_V34</div>
+    <div id="coords" style="margin-top:10px; font-size: 11px; color: #00cccc;">ANALYZING_VECTOR_DATA...</div>
     <div id="compass">N</div>
     
     <div class="control-grid">
-        <button id="btn-start" onclick="setTracking('START')">ENGAGE</button>
-        <button id="btn-pause" onclick="setTracking('PAUSE')">HOLD</button>
-        <button id="btn-stop" onclick="setTracking('STOP')" class="active-btn">HALT</button>
+        <button id="btn-start" onclick="setTracking('START')">START</button>
+        <button id="btn-pause" onclick="setTracking('PAUSE')">PAUSE</button>
+        <button id="btn-stop" onclick="setTracking('STOP')" class="active-btn">STOP</button>
     </div>
-    <div style="margin-top:15px; font-size:9px; color:#008888; text-align:center;">CLICK TRIANGLE TO ZOOM OUT & RESET</div>
+    
+    <button class="btn-io" onclick="exportToCSV()">EXPORT TELEMETRY (.CSV)</button>
+    <input type="file" id="csv-import" accept=".csv" onchange="importCSV(event)" style="display:none">
+    <button onclick="document.getElementById('csv-import').click()" style="margin-top:6px; width: 100%; background:none; border: 1px solid #008888; color: #008888;">IMPORT ARCHIVE</button>
+</div>
+
+<div id="stream-hud">
+    <div style="color:#00ffcc; border-bottom:1px solid #004444; margin-bottom:8px; font-weight:bold;">LIVE_VECTOR_STREAM</div>
+    <div class="term-row"><span class="label">Nodes</span> <span id="stream-nodes" class="value">0</span></div>
+    <div class="term-row"><span class="label">Elapsed</span> <span id="stream-time" class="value">00:00</span></div>
+</div>
+
+<div id="node-terminal">
+    <div style="font-size:14px; font-weight:bold; margin-bottom:15px; color:#00ffcc; border-bottom: 1px solid #00ffcc;">INTERROGATION_RESULTS: <span id="term-src">--</span></div>
+    <div class="term-grid">
+        <div>
+            <div class="term-row"><span class="label">Lat</span> <span id="term-lat" class="value">--</span></div>
+            <div class="term-row"><span class="label">Lon</span> <span id="term-lon" class="value">--</span></div>
+        </div>
+        <div>
+            <div class="term-row"><span class="label">X_Off</span> <span id="term-x" class="value">--</span></div>
+            <div class="term-row"><span class="label">Z_Off</span> <span id="term-z" class="value">--</span></div>
+        </div>
+    </div>
+    <div class="term-row" style="margin-top:10px;"><span class="label">Timestamp</span> <span id="term-time" class="value">--</span></div>
 </div>
 
 <div id="map-buffer"></div>
@@ -50,91 +87,139 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     let startCoords = null, trackingState = 'STOP', lastPosition = null;
-    let trackingInterval = null, mapLoaded = false;
+    let trackingInterval = null, sessionStartTime = null;
     const raycaster = new THREE.Raycaster(), mouse = new THREE.Vector2();
-    let selectedNode = null;
-    window.sessionData = [];
+    let selectedNode = null, mapLoaded = false;
+    window.sessionData = []; 
 
     const map = new maplibregl.Map({
         container: 'map-buffer',
         style: 'https://tiles.openfreemap.org/styles/dark',
-        center: [-81.6881, 26.2750], zoom: 19, interactive: false, preserveDrawingBuffer: true 
+        center: [-81.6881, 26.2750], 
+        zoom: 19,
+        interactive: false, 
+        preserveDrawingBuffer: true 
     });
+
+    map.on('load', () => {
+        map.setLayoutProperty('road_label', 'text-field', ['get', 'name']);
+        map.setPaintProperty('road_label', 'text-color', '#ffffff');
+    });
+
     map.on('idle', () => { mapLoaded = true; });
 
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000505);
-    scene.fog = new THREE.FogExp2(0x000505, 0.001); // Lowered fog for wide view
-
+    scene.fog = new THREE.FogExp2(0x000000, 0.002);
+    
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 5000);
-    camera.position.set(200, 250, 200); // Initial wide position
-
+    camera.position.set(100, 120, 150);
+    
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(window.devicePixelRatio);
     document.body.appendChild(renderer.domElement);
-
+    
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
-    const sun = new THREE.DirectionalLight(0x00ffff, 1.5);
-    sun.position.set(50, 300, 50);
-    scene.add(sun);
-    
-    const grid = new THREE.GridHelper(3000, 100, 0x003333, 0x001111);
+    scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+    const light = new THREE.PointLight(0x00ffcc, 1000, 500);
+    scene.add(light);
+
+    const grid = new THREE.GridHelper(2000, 100, 0x004444, 0x001111);
     scene.add(grid);
 
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
     const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(2000, 2000), 
-        new THREE.MeshStandardMaterial({ map: mapTex, roughness: 0.8 })
+        new THREE.PlaneGeometry(1000, 1000), 
+        new THREE.MeshBasicMaterial({ map: mapTex, transparent: true, opacity: 0.8 })
     );
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
     const sentry = new THREE.Group();
     const pyr = new THREE.Mesh(
-        new THREE.CylinderGeometry(0, 5, 12, 4), 
-        new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 5 })
+        new THREE.CylinderGeometry(0, 4, 8, 4), 
+        new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2 })
     );
     pyr.rotation.x = Math.PI;
     sentry.add(pyr);
-    sentry.position.y = 20;
+    sentry.position.y = 15;
     scene.add(sentry);
 
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    function plot(lat, lon, data, color) {
+    function getVector(lat, lon) {
         if (!startCoords) startCoords = { lat, lon };
-        const z = -(lat - startCoords.lat) * 111111;
+        const z = (lat - startCoords.lat) * 111111;
         const x = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
-        
-        const node = new THREE.Mesh(
-            new THREE.SphereGeometry(2, 16, 16), 
-            new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 2 })
-        );
-        node.position.set(x, 2, z);
-        node.userData = { ...data, x, z, targetScale: 1.0 };
-        breadcrumbs.add(node);
-        sentry.position.set(x, sentry.position.y, z);
+        return { x, z: -z };
     }
 
-    // --- STRATEGIC ZOOM OUT ON CLICK ---
+    function plot(lat, lon, data, color) {
+        const vec = getVector(lat, lon);
+        const node = new THREE.Mesh(
+            new THREE.SphereGeometry(2, 16, 16), 
+            new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.5 })
+        );
+        node.position.set(vec.x, 2, vec.z);
+        node.userData = { ...data, x: vec.x, z: vec.z, targetScale: 1.0 };
+        breadcrumbs.add(node);
+        sentry.position.set(vec.x, sentry.position.y, vec.z);
+        light.position.set(vec.x, 30, vec.z);
+        document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
+    }
+
+    window.exportToCSV = () => {
+        const header = "timestamp,lat,lon,x_offset,z_offset,source\n";
+        const rows = window.sessionData.map(d => {
+            const v = getVector(d.lat, d.lon);
+            return `${d.t},${d.lat},${d.lon},${v.x.toFixed(2)},${v.z.toFixed(2)},${d.source}`;
+        }).join("\n");
+        const blob = new Blob([header + rows], { type: 'text/csv' });
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(blob);
+        link.download = `V34_LOG_${Date.now()}.csv`;
+        link.click();
+    };
+
+    window.importCSV = (e) => {
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const lines = event.target.result.split('\n').slice(1);
+            lines.forEach(line => {
+                const p = line.split(',');
+                if(p.length >= 3) {
+                    const data = { t: p[0], lat: parseFloat(p[1]), lon: parseFloat(p[2]), source: "ARCHIVE_RESTORE" };
+                    if(!isNaN(data.lat)) plot(data.lat, data.lon, data, 0x00ccff);
+                }
+            });
+        };
+        reader.readAsText(e.target.files[0]);
+    };
+
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
 
-        const triHit = raycaster.intersectObject(pyr);
-        if (triHit.length > 0) {
-            controls.reset(); 
-            controls.target.set(sentry.position.x, 0, sentry.position.z);
-            // ZOOM OUT: Higher Y (height) and larger X/Z offset for broad view
-            camera.position.set(sentry.position.x + 150, 200, sentry.position.z + 150);
-            controls.update();
-            return;
+        const hits = raycaster.intersectObjects(breadcrumbs.children);
+        if (hits.length > 0) {
+            if (selectedNode) { selectedNode.userData.targetScale = 1.0; selectedNode.material.wireframe = false; }
+            selectedNode = hits[0].object;
+            selectedNode.userData.targetScale = 5.0;
+            selectedNode.material.wireframe = true;
+            
+            document.getElementById('node-terminal').style.display = 'block';
+            document.getElementById('term-src').innerText = selectedNode.userData.source;
+            document.getElementById('term-time').innerText = selectedNode.userData.t;
+            document.getElementById('term-lat').innerText = selectedNode.userData.lat.toFixed(6);
+            document.getElementById('term-lon').innerText = selectedNode.userData.lon.toFixed(6);
+            document.getElementById('term-x').innerText = selectedNode.userData.x.toFixed(2) + "m";
+            document.getElementById('term-z').innerText = selectedNode.userData.z.toFixed(2) + "m";
+        } else {
+            document.getElementById('node-terminal').style.display = 'none';
         }
     });
 
@@ -143,9 +228,12 @@
         document.querySelectorAll('button').forEach(b => b.classList.remove('active-btn'));
         document.getElementById(`btn-${state.toLowerCase()}`).classList.add('active-btn');
         if (state === 'START' && !trackingInterval) {
+            sessionStartTime = Date.now();
             trackingInterval = setInterval(() => {
                 if (trackingState === 'START' && lastPosition) {
-                    plot(lastPosition.lat, lastPosition.lon, { t: new Date().toLocaleTimeString() }, 0xff3300);
+                    const data = { t: new Date().toLocaleTimeString(), lat: lastPosition.lat, lon: lastPosition.lon, source: "SENSOR_LIVE" };
+                    window.sessionData.push(data);
+                    plot(data.lat, data.lon, data, 0xff0055);
                 }
             }, 1000);
         }
@@ -154,7 +242,7 @@
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
             lastPosition = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            document.getElementById('coords').innerText = `SAT_WIDE: ${lastPosition.lat.toFixed(5)}, ${lastPosition.lon.toFixed(5)}`;
+            document.getElementById('coords').innerText = `VECTOR_IN: ${lastPosition.lat.toFixed(6)}, ${lastPosition.lon.toFixed(6)}`;
             map.setCenter([lastPosition.lon, lastPosition.lat]);
         }, null, { enableHighAccuracy: true });
     }
@@ -163,14 +251,18 @@
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
         sentry.rotation.y += 0.05;
-        sentry.position.y = 20 + Math.sin(Date.now() * 0.004) * 5;
+        sentry.position.y = 15 + Math.sin(Date.now() * 0.003) * 3;
         
+        // Compass logic
         const dir = new THREE.Vector3();
         camera.getWorldDirection(dir);
         const angle = Math.atan2(dir.x, dir.z) * (180 / Math.PI);
         const sectors = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
         document.getElementById('compass').innerText = sectors[Math.round(((angle + 180) % 360) / 45) % 8];
 
+        breadcrumbs.children.forEach(n => {
+            n.scale.lerp(new THREE.Vector3(n.userData.targetScale, n.userData.targetScale, n.userData.targetScale), 0.1);
+        });
         controls.update();
         renderer.render(scene, camera);
     }
