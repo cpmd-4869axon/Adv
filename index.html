@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Interaction Reset</title>
+    <title>Sentry Node | Proximity HUD</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -10,22 +10,22 @@
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
         #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
-               background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 260px; max-height: 85vh; overflow-y: auto; }
+               background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 260px; }
 
+        /* Floating Proximity HUD */
         #node-popup { 
-            position: absolute; display: none; background: rgba(0, 30, 30, 0.95); 
-            border: 2px solid #00ffcc; color: #00ffcc; padding: 18px; 
-            z-index: 200; pointer-events: none; border-radius: 4px;
-            min-width: 240px; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+            position: absolute; display: none; background: rgba(0, 30, 30, 0.9); 
+            border: 1px solid #00ffcc; color: #00ffcc; padding: 10px; 
+            z-index: 200; pointer-events: none; font-size: 12px;
+            box-shadow: 0 0 15px rgba(0, 255, 204, 0.2);
         }
-        #node-popup div { font-size: 14px; margin-bottom: 6px; line-height: 1.4; }
+        #node-popup div { margin-bottom: 2px; }
 
-        .section-label { font-size: 11px; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #004444; padding-bottom: 3px; letter-spacing: 1px; }
+        .section-label { font-size: 11px; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #004444; padding-bottom: 3px; }
         .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
         
         button, input[type="file"] { background: #002222; color: #00ffcc; border: 1px solid #00ffcc; padding: 8px; 
-                         cursor: pointer; font-family: monospace; font-size: 11px; margin-top: 8px; width: 100%; transition: 0.3s; }
-        button:hover { background: #004444; }
+                         cursor: pointer; font-family: monospace; font-size: 11px; margin-top: 8px; width: 100%; }
         button.active-btn { background: #00ffcc; color: #000; }
         #btn-wipe { border-color: #ff3333; color: #ff3333; margin-top: 15px; }
     </style>
@@ -33,7 +33,7 @@
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V14</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V15</div>
     <div id="coords" style="margin-top:10px; font-size: 12px;">SYSTEM_IDLE</div>
     
     <div class="section-label">TELEMETRY CONTROL</div>
@@ -46,19 +46,14 @@
     <div class="section-label">DATA UPLOAD</div>
     <input type="file" id="csv-upload" multiple accept=".csv" onchange="handleImport(event)">
     
-    <div id="legend">
-        <div class="section-label">ACTIVE LAYERS</div>
-        <div id="legend-list"></div>
-    </div>
-
     <button id="btn-wipe" onclick="wipeImportedData()">WIPE IMPORTED DATA</button>
 </div>
 
 <div id="node-popup">
-    <div id="pop-src" style="font-weight:bold; color:#fff; border-bottom:1px solid #00ffcc; padding-bottom:4px; margin-bottom:10px;">SRC: --</div>
-    <div id="pop-time">TIME: --</div>
-    <div id="pop-lat">LAT: --</div>
-    <div id="pop-lon">LON: --</div>
+    <div id="pop-src" style="font-weight:bold; border-bottom:1px solid #00ffcc;">--</div>
+    <div id="pop-time">--</div>
+    <div id="pop-lat">--</div>
+    <div id="pop-lon">--</div>
 </div>
 
 <div id="map-buffer"></div>
@@ -75,17 +70,11 @@
     import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
     let startCoords = null;
-    let lastLoggedTime = 0;
     let trackingState = 'STOP';
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
-    let zoomTarget = null;
+    let selectedNode = null;
     let mapLoaded = false;
-    let animatedNodes = []; // Nodes currently shrinking
-    let resettingNodes = []; // Nodes currently expanding
-
-    const PALETTE = [0x00ffcc, 0xffff00, 0xff00ff, 0x00aaff, 0xff8800];
-    let colorIndex = 0;
 
     const map = new maplibregl.Map({
         container: 'map-buffer',
@@ -112,136 +101,102 @@
     const sentry = new THREE.Group();
     const pyr = new THREE.Mesh(new THREE.CylinderGeometry(0, 2.5, 5, 4), new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true }));
     pyr.rotation.x = Math.PI; sentry.add(pyr);
-    const ring = new THREE.Mesh(new THREE.RingGeometry(3, 3.8, 64), new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, side: THREE.DoubleSide }));
-    ring.rotation.x = -Math.PI / 2; sentry.add(ring);
     scene.add(sentry);
 
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    window.setTracking = (state) => {
-        trackingState = state;
+    window.setTracking = (s) => {
+        trackingState = s;
         document.querySelectorAll('.control-grid button').forEach(b => b.classList.remove('active-btn'));
-        document.getElementById(`btn-${state.toLowerCase()}`).classList.add('active-btn');
+        document.getElementById(`btn-${s.toLowerCase()}`).classList.add('active-btn');
     };
 
-    function plot(lat, lon, data, color, source, isLive = false) {
+    function plot(lat, lon, data, color, source, isLive) {
         if (!startCoords) startCoords = { lat, lon };
         const dy = (lat - startCoords.lat) * 111111;
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
-        
-        const mat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.2 });
-        const node = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 16), mat);
+        const node = new THREE.Mesh(
+            new THREE.SphereGeometry(1.0, 16, 16), 
+            new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.2 })
+        );
         node.position.set(dx, 1.0, -dy);
-        node.userData = { ...data, source, color, transitioning: false, isLive };
+        node.userData = { ...data, source, color, isLive, targetScale: 1.0 };
         breadcrumbs.add(node);
     }
 
     window.handleImport = async (e) => {
         for (let file of e.target.files) {
             const text = await file.text();
-            const color = PALETTE[colorIndex++ % PALETTE.length];
             text.split('\n').slice(1).forEach(line => {
                 const p = line.split(',');
-                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, color, file.name, false);
+                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, 0x00ffcc, file.name, false);
             });
         }
     };
 
     window.wipeImportedData = () => {
-        const toRemove = breadcrumbs.children.filter(node => !node.userData.isLive);
-        toRemove.forEach(node => breadcrumbs.remove(node));
-        document.getElementById('legend-list').innerHTML = "";
+        const toRemove = breadcrumbs.children.filter(n => !n.userData.isLive);
+        toRemove.forEach(n => breadcrumbs.remove(n));
+        selectedNode = null;
         document.getElementById('node-popup').style.display = 'none';
-        zoomTarget = null;
     };
 
-    if (navigator.geolocation) {
-        navigator.geolocation.watchPosition(pos => {
-            if (trackingState === 'STOP') return;
-            const { latitude: lat, longitude: lon } = pos.coords;
-            map.setCenter([lon, lat]);
-            if (trackingState === 'START' && Date.now() - lastLoggedTime > 2000) {
-                lastLoggedTime = Date.now();
-                plot(lat, lon, { t: new Date().toLocaleTimeString(), lat, lon }, 0xff0055, "LIVE SESSION", true);
-            }
-        });
-    }
-
-    // --- INTERACTION LOGIC ---
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
-        
         const hits = raycaster.intersectObjects(breadcrumbs.children);
         const pop = document.getElementById('node-popup');
 
         if (hits.length > 0) {
-            const node = hits[0].object;
-            pop.style.display = 'block';
-            pop.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + 'px';
-            pop.style.top = Math.min(e.clientY + 20, window.innerHeight - 220) + 'px';
-            document.getElementById('pop-src').innerText = `SRC: ${node.userData.source}`;
-            document.getElementById('pop-time').innerText = `TIME: ${node.userData.t}`;
-            
-            zoomTarget = node.position.clone().add(new THREE.Vector3(12, 18, 18));
-
-            // Select: Shrink + Wireframe
-            if (!node.userData.transitioning) {
-                node.userData.transitioning = true;
-                node.material.wireframe = true;
-                animatedNodes.push(node);
-                // Remove from resetting queue if it was there
-                resettingNodes = resettingNodes.filter(n => n !== node);
+            if (selectedNode) {
+                selectedNode.userData.targetScale = 1.0;
+                selectedNode.material.wireframe = false;
             }
-        } else {
-            // DESELECT: Reset all wireframes on map tap
-            pop.style.display = 'none';
-            zoomTarget = null;
+            selectedNode = hits[0].object;
+            selectedNode.userData.targetScale = 2.5; // EXPAND
+            selectedNode.material.wireframe = true;
             
-            breadcrumbs.children.forEach(node => {
-                if (node.userData.transitioning) {
-                    node.userData.transitioning = false;
-                    node.material.wireframe = false;
-                    resettingNodes.push(node);
-                    // Remove from shrinking queue
-                    animatedNodes = animatedNodes.filter(n => n !== node);
-                }
-            });
+            pop.style.display = 'block';
+            document.getElementById('pop-src').innerText = selectedNode.userData.source;
+            document.getElementById('pop-time').innerText = "T: " + selectedNode.userData.t;
+            document.getElementById('pop-lat').innerText = "LAT: " + parseFloat(selectedNode.userData.lat).toFixed(5);
+            document.getElementById('pop-lon').innerText = "LON: " + parseFloat(selectedNode.userData.lon).toFixed(5);
+        } else {
+            if (selectedNode) {
+                selectedNode.userData.targetScale = 1.0; // CONTRACT
+                selectedNode.material.wireframe = false;
+                selectedNode = null;
+            }
+            pop.style.display = 'none';
         }
     });
 
     function animate() {
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
-        const t = Date.now() * 0.001;
-        sentry.position.y = 3.5 + Math.sin(t * 2.5) * 1.0;
+        
         sentry.rotation.y += 0.01;
+        sentry.position.y = 3 + Math.sin(Date.now()*0.002);
 
-        // Selection Anime (Shrink)
-        animatedNodes.forEach((node, idx) => {
-            if (node.scale.x > 0.6) {
-                node.scale.multiplyScalar(0.95);
-            } else {
-                animatedNodes.splice(idx, 1);
-            }
+        // Animation Handling
+        breadcrumbs.children.forEach(node => {
+            const step = 0.15;
+            if (node.scale.x < node.userData.targetScale) node.scale.addScalar(step);
+            if (node.scale.x > node.userData.targetScale) node.scale.subScalar(step);
         });
 
-        // Reset Anime (Expand to original color sphere)
-        resettingNodes.forEach((node, idx) => {
-            if (node.scale.x < 1.0) {
-                node.scale.multiplyScalar(1.05);
-            } else {
-                node.scale.set(1, 1, 1);
-                resettingNodes.splice(idx, 1);
-            }
-        });
-
-        if (zoomTarget) {
-            camera.position.lerp(zoomTarget, 0.07);
-            controls.target.lerp(zoomTarget.clone().sub(new THREE.Vector3(12,18,18)), 0.07);
+        // Update Proximity HUD Position
+        if (selectedNode) {
+            const vector = selectedNode.position.clone().project(camera);
+            const x = (vector.x + 1) / 2 * window.innerWidth;
+            const y = -(vector.y - 1) / 2 * window.innerHeight;
+            const pop = document.getElementById('node-popup');
+            pop.style.left = (x + 20) + 'px';
+            pop.style.top = (y - 40) + 'px';
         }
+
         controls.update();
         renderer.render(scene, camera);
     }
