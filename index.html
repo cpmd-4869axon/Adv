@@ -2,20 +2,20 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V76 Tactical Labels</title>
+    <title>Sentry OS | V77 Aegis Clean</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
         :root { --neon: #00ffcc; --warning: #ffcc00; --alert: #ff0055; --bg: #000808; }
         body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
         
+        /* Tactical Interlace Overlay */
         body::after {
             content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.1) 50%);
             z-index: 1000; background-size: 100% 3px; pointer-events: none; opacity: 0.3;
         }
 
-        /* Increased resolution for label clarity */
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
         .panel { border: 1px solid var(--neon); backdrop-filter: blur(8px); background: rgba(0, 10, 10, 0.9); box-shadow: 0 0 15px rgba(0,255,204,0.2); }
@@ -33,8 +33,8 @@
 <body>
 
 <div id="hud" class="panel">
-    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_LABELS_V76</div>
-    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">INTEL_LAYER: ENABLED</div>
+    <div style="font-weight: bold; font-size: 18px; letter-spacing: 3px;">AEGIS_CLEAN_V77</div>
+    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">RADAR_UPLINK: STABLE</div>
     
     <div id="compass">N</div>
     
@@ -72,16 +72,15 @@
     const targetCamPos = new THREE.Vector3();
     const targetLookAt = new THREE.Vector3();
 
-    // Map Engine with Label Optimization
+    // Map Engine (Buffer for Tactical Radar)
     const map = new maplibregl.Map({
         container: 'map-buffer',
-        style: 'https://tiles.openfreemap.org/styles/dark', // Dark style includes label layers
+        style: 'https://tiles.openfreemap.org/styles/dark',
         center: [-81.6881, 26.2750], 
-        zoom: 18.5, // Tighter zoom makes labels larger on the radar
+        zoom: 18.5, 
         interactive: false, 
         preserveDrawingBuffer: true 
     });
-
     map.on('idle', () => { mapLoaded = true; });
 
     // Scene Setup
@@ -103,7 +102,7 @@
     light.position.set(0, 800, 0);
     scene.add(light);
 
-    // Physical Grid Floor
+    // Static World Floor & Grid
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(10000, 10000),
         new THREE.MeshStandardMaterial({ color: 0x000505, roughness: 1 })
@@ -116,7 +115,7 @@
     grid.position.y = -4;
     scene.add(grid);
 
-    // Tactical Overlay Plane (Higher Res for Text)
+    // Dynamic Tactical Radar Plane
     const mapTex = new THREE.CanvasTexture(map.getCanvas());
     mapTex.minFilter = THREE.LinearFilter;
     mapTex.magFilter = THREE.LinearFilter;
@@ -137,7 +136,7 @@
     sentry.position.y = 60;
     scene.add(sentry);
 
-    // Neural Path
+    // Neural Path (Trail)
     const trailGeom = new THREE.BufferGeometry();
     const trailMat = new THREE.LineBasicMaterial({ color: 0xff0044, linewidth: 3 });
     const trailLine = new THREE.Line(trailGeom, trailMat);
