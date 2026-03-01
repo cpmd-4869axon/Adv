@@ -9,7 +9,6 @@
         :root { --neon: #00ffcc; --alert: #ff0055; --bg: #000808; }
         body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Segoe UI', monospace; }
         
-        /* Tactical HUD - Neural Aesthetics */
         .hud-container {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
             padding: 20px; border-left: 4px solid var(--neon);
@@ -19,7 +18,15 @@
         .glitch-text { font-size: 24px; font-weight: 900; letter-spacing: 5px; text-shadow: 2px 2px var(--alert); }
         .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; font-size: 10px; opacity: 0.8; }
         
-        /* Map Buffer */
+        /* Tactical Buttons */
+        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 15px; }
+        button { 
+            background: rgba(0, 255, 204, 0.1); border: 1px solid var(--neon); color: var(--neon); 
+            padding: 10px 20px; cursor: pointer; font-family: monospace; font-weight: bold;
+            transition: 0.3s; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%);
+        }
+        button:hover { background: var(--neon); color: #000; box-shadow: 0 0 20px var(--neon); }
+
         #map-engine { width: 1024px; height: 1024px; position: absolute; top: -9999px; }
     </style>
 </head>
@@ -31,9 +38,15 @@
     <div class="stats-grid">
         <div>LAT: <span id="lat">0.00</span></div>
         <div>LON: <span id="lon">0.00</span></div>
-        <div>STABILITY: <span style="color:white">98.4%</span></div>
+        <div>DATA_SPHERE: <span style="color:white">ONLINE</span></div>
         <div>ENCRYPTION: <span style="color:white">AES-256</span></div>
     </div>
+</div>
+
+<div class="controls">
+    <button onclick="toggleVisuals('SPHERE')">TOGGLE SPHERE</button>
+    <button onclick="toggleVisuals('GRID')">TOGGLE GRID</button>
+    <button onclick="resetCamera()">RE-CENTER</button>
 </div>
 
 <div id="map-engine"></div>
@@ -45,7 +58,6 @@
 <script type="module">
     import * as THREE from 'three';
 
-    // --- Core Architecture ---
     const clock = new THREE.Clock();
     const scene = new THREE.Scene();
     scene.fog = new THREE.FogExp2(0x000808, 0.0005);
@@ -59,7 +71,7 @@
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
-    // --- Advanced Leaflet Integration ---
+    // --- Advanced Leaflet Engine ---
     const lMap = L.map('map-engine', { 
         zoomControl: false, attributionControl: false, preferCanvas: true 
     }).setView([26.2750, -81.6881], 18);
@@ -71,7 +83,7 @@
     const mapTex = new THREE.CanvasTexture(mapCanvas);
     mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    // --- Tactical Floor ---
+    // --- Tactical Components ---
     const floor = new THREE.Mesh(
         new THREE.PlaneGeometry(5000, 5000),
         new THREE.MeshBasicMaterial({ map: mapTex, transparent: true, opacity: 0.9 })
@@ -79,61 +91,61 @@
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // 3x3 Advanced Grid Overlay
     const grid = new THREE.GridHelper(5000, 3, 0x00ffcc, 0x002222);
     grid.position.y = 2;
     scene.add(grid);
 
-    // --- Sentry Advanced Mesh ---
+    // --- DATA SPHERE ASSEMBLY ---
     const sentryGroup = new THREE.Group();
+    
+    // Core Sentry
     const core = new THREE.Mesh(
-        new THREE.IcosahedronGeometry(40, 1),
+        new THREE.OctahedronGeometry(40, 0),
         new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
     );
-    const pulse = new THREE.Mesh(
-        new THREE.SphereGeometry(38, 32, 32),
-        new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.2 })
-    );
-    sentryGroup.add(core, pulse);
-    sentryGroup.position.y = 100;
+
+    // Data Sphere (Neural Layer)
+    const sphereGeom = new THREE.SphereGeometry(150, 32, 32);
+    const sphereMat = new THREE.MeshBasicMaterial({ 
+        color: 0x00ffcc, wireframe: true, transparent: true, opacity: 0.1 
+    });
+    const dataSphere = new THREE.Mesh(sphereGeom, sphereMat);
+
+    sentryGroup.add(core, dataSphere);
+    sentryGroup.position.y = 150;
     scene.add(sentryGroup);
 
-    // --- Kinetic GPS Logic ---
+    // --- Interaction Logic ---
+    window.toggleVisuals = (type) => {
+        if(type === 'SPHERE') dataSphere.visible = !dataSphere.visible;
+        if(type === 'GRID') grid.visible = !grid.visible;
+    };
+
+    window.resetCamera = () => {
+        camera.position.set(0, 1200, 1200);
+        camera.lookAt(0, 0, 0);
+    };
+
     let targetPos = { lat: 26.2750, lon: -81.6881 };
-    let currentPos = { lat: 26.2750, lon: -81.6881 };
-
-    function updateGPS() {
-        if (navigator.geolocation) {
-            navigator.geolocation.watchPosition(pos => {
-                targetPos.lat = pos.coords.latitude;
-                targetPos.lon = pos.coords.longitude;
-                document.getElementById('lat').innerText = targetPos.lat.toFixed(4);
-                document.getElementById('lon').innerText = targetPos.lon.toFixed(4);
-            }, null, { enableHighAccuracy: true });
-        }
+    if (navigator.geolocation) {
+        navigator.geolocation.watchPosition(pos => {
+            targetPos.lat = pos.coords.latitude;
+            targetPos.lon = pos.coords.longitude;
+            document.getElementById('lat').innerText = targetPos.lat.toFixed(4);
+            document.getElementById('lon').innerText = targetPos.lon.toFixed(4);
+        });
     }
-    updateGPS();
 
-    // --- Render Loop ---
     function animate() {
         requestAnimationFrame(animate);
         const delta = clock.getElapsedTime();
 
-        // Smooth Interpolation (Lerp) for Movement
-        currentPos.lat += (targetPos.lat - currentPos.lat) * 0.05;
-        currentPos.lon += (targetPos.lon - currentPos.lon) * 0.05;
-        lMap.setView([currentPos.lat, currentPos.lon], 18);
-
-        // Update Texture only when map settles
+        lMap.setView([targetPos.lat, targetPos.lon], 18);
         mapTex.needsUpdate = true;
 
-        // Sentry Animations
         sentryGroup.rotation.y += 0.01;
-        sentryGroup.position.y = 100 + Math.sin(delta * 2) * 20;
-        pulse.scale.setScalar(1 + Math.sin(delta * 4) * 0.1);
-
-        // Dynamic Camera Sway
-        camera.position.x = Math.sin(delta * 0.2) * 100;
+        dataSphere.rotation.x += 0.005;
+        sentryGroup.position.y = 150 + Math.sin(delta * 2) * 25;
 
         renderer.render(scene, camera);
     }
