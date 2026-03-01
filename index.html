@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Command Reset</title>
+    <title>Sentry Node | Tactical View Reset</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -23,7 +23,6 @@
             border: 1px solid #00ffcc; color: #00ffcc; padding: 12px; z-index: 200; 
             pointer-events: none; width: 220px; box-shadow: 0 0 15px rgba(0, 255, 204, 0.3);
         }
-        .pop-header { font-weight: bold; border-bottom: 1px solid #00ffcc; margin-bottom: 8px; font-size: 11px; }
 
         .section-label { font-size: 11px; color: #00ffcc; margin-top: 15px; border-bottom: 1px solid #004444; padding-bottom: 3px; }
         .control-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 5px; margin-top: 10px; }
@@ -36,8 +35,8 @@
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V22</div>
-    <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: ACTIVE</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V23</div>
+    <div id="coords" style="margin-top:10px; font-size: 11px;">GPS: TRACKING</div>
     
     <div class="section-label">TELEMETRY CONTROL</div>
     <div class="control-grid">
@@ -51,7 +50,7 @@
     <input type="file" id="csv-import" accept=".csv" onchange="importCSV(event)" style="display:none">
     <button onclick="document.getElementById('csv-import').click()">IMPORT DATA</button>
     
-    <div style="font-size: 9px; color: #ff3333; margin-top: 15px; text-align: center;">TAP TRIANGLE TO RESET SYSTEM</div>
+    <div style="font-size: 9px; color: #00ffcc; margin-top: 15px; text-align: center; opacity: 0.6;">TAP SENTRY TO RE-CENTER CAMERA</div>
 </div>
 
 <div id="stream-hud">
@@ -61,7 +60,7 @@
 </div>
 
 <div id="node-popup">
-    <div class="pop-header" id="pop-src">SOURCE</div>
+    <div class="pop-header" id="pop-src" style="font-weight:bold; border-bottom:1px solid #00ffcc;">SOURCE</div>
     <div style="font-size: 10px;" id="pop-time">--</div>
 </div>
 
@@ -106,40 +105,49 @@
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    // --- SENTRY COMMAND NODE ---
     const sentry = new THREE.Group();
     const pyr = new THREE.Mesh(new THREE.CylinderGeometry(0, 2.5, 5, 4), new THREE.MeshStandardMaterial({ color: 0x00ffcc, flatShading: true }));
-    pyr.rotation.x = Math.PI; 
-    pyr.name = "SENTRY_CORE"; // For raycasting
-    sentry.add(pyr);
+    pyr.rotation.x = Math.PI; sentry.add(pyr);
     const ring = new THREE.Mesh(new THREE.RingGeometry(3, 3.5, 32), new THREE.MeshBasicMaterial({ color: 0x00ffcc, side: THREE.DoubleSide, transparent: true, opacity: 0.5 }));
-    ring.rotation.x = -Math.PI / 2;
-    sentry.add(ring);
+    ring.rotation.x = -Math.PI / 2; sentry.add(ring);
     sentry.position.y = 12;
     scene.add(sentry);
 
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // --- COMMAND ACTIONS ---
-    window.resetSystem = () => {
-        // Clear 3D Space
-        while(breadcrumbs.children.length > 0) breadcrumbs.remove(breadcrumbs.children[0]);
-        // Clear Data Buffers
-        window.sessionData = [];
-        sessionStartTime = Date.now();
-        document.getElementById('stream-nodes').innerText = "0";
-        document.getElementById('node-popup').style.display = 'none';
-        console.log("SYSTEM RESET: Data Purged");
+    // --- VIEW INTERACTION: PAN, TILT, ZOOM ---
+    window.resetCameraView = () => {
+        // Snap Target to Sentry
+        const startPos = camera.position.clone();
+        const endPos = sentry.position.clone().add(new THREE.Vector3(20, 40, 60));
+        const startTarget = controls.target.clone();
+        const endTarget = sentry.position.clone();
+
+        let startTime = null;
+        const duration = 800; // ms for smooth glide
+
+        function glide(time) {
+            if (!startTime) startTime = time;
+            let progress = (time - startTime) / duration;
+            if (progress > 1) progress = 1;
+
+            // Ease Out Cubic
+            const ease = 1 - Math.pow(1 - progress, 3);
+
+            camera.position.lerpVectors(startPos, endPos, ease);
+            controls.target.lerpVectors(startTarget, endTarget, ease);
+
+            if (progress < 1) requestAnimationFrame(glide);
+        }
+        requestAnimationFrame(glide);
     };
 
     window.exportToCSV = () => {
-        if (window.sessionData.length === 0) return alert("NO DATA TO EXPORT.");
-        const headers = "timestamp,latitude,longitude,source\n";
-        const rows = window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
-        const blob = new Blob([headers + rows], { type: 'text/csv' });
+        if (window.sessionData.length === 0) return alert("NO DATA.");
+        const csv = "t,lat,lon,src\n" + window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
         const link = document.createElement("a");
-        link.href = URL.createObjectURL(blob);
+        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
         link.download = `SENTRY_LOG_${Date.now()}.csv`;
         link.click();
     };
@@ -193,22 +201,15 @@
         document.getElementById('stream-nodes').innerText = breadcrumbs.children.length;
     }
 
-    // --- INTERACTION: ZOOM & RESET ---
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
         
-        // Check for Sentry Reset Trigger
+        // INTERCEPT SENTRY TAP
         const sentryHits = raycaster.intersectObject(pyr);
         if (sentryHits.length > 0) {
-            // 1. ZOOM IN ANIMATION
-            const targetPos = sentry.position.clone().add(new THREE.Vector3(15, 15, 15));
-            controls.target.copy(sentry.position);
-            camera.position.lerp(targetPos, 0.5); // Fast snap zoom
-            
-            // 2. RESET SYSTEM
-            window.resetSystem();
+            window.resetCameraView();
             return;
         }
 
