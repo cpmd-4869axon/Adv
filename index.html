@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Telemetry Control</title>
+    <title>Sentry Node | Layer Management</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -27,12 +27,20 @@
                          cursor: pointer; font-family: monospace; font-size: 11px; margin-top: 8px; width: 100%; transition: 0.3s; }
         button:hover { background: #004444; }
         button.active-btn { background: #00ffcc; color: #000; }
+        
+        /* Tactical Wipe Button */
+        #btn-wipe { border-color: #ff3333; color: #ff3333; margin-top: 15px; }
+        #btn-wipe:hover { background: #330000; }
+
+        #legend-list { margin-top: 10px; }
+        .legend-item { display: flex; align-items: center; font-size: 10px; margin-bottom: 5px; }
+        .color-box { width: 10px; height: 10px; margin-right: 8px; border: 1px solid #fff; }
     </style>
 </head>
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V12</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V13</div>
     <div id="coords" style="margin-top:10px; font-size: 12px;">SYSTEM_IDLE</div>
     
     <div class="section-label">TELEMETRY CONTROL</div>
@@ -44,6 +52,13 @@
 
     <div class="section-label">DATA UPLOAD</div>
     <input type="file" id="csv-upload" multiple accept=".csv" onchange="handleImport(event)">
+    
+    <div id="legend">
+        <div class="section-label">ACTIVE LAYERS</div>
+        <div id="legend-list"></div>
+    </div>
+
+    <button id="btn-wipe" onclick="wipeImportedData()">WIPE IMPORTED DATA</button>
 </div>
 
 <div id="node-popup">
@@ -68,7 +83,7 @@
 
     let startCoords = null;
     let lastLoggedTime = 0;
-    let trackingState = 'STOP'; // START, PAUSE, STOP
+    let trackingState = 'STOP';
     const raycaster = new THREE.Raycaster();
     const mouse = new THREE.Vector2();
     let zoomTarget = null;
@@ -78,7 +93,6 @@
     const PALETTE = [0x00ffcc, 0xffff00, 0xff00ff, 0x00aaff, 0xff8800];
     let colorIndex = 0;
 
-    // --- 1. MAP ---
     const map = new maplibregl.Map({
         container: 'map-buffer',
         style: 'https://tiles.openfreemap.org/styles/dark',
@@ -87,7 +101,6 @@
     });
     map.on('idle', () => { mapLoaded = true; });
 
-    // --- 2. THREE SCENE ---
     const scene = new THREE.Scene();
     const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 2000);
     camera.position.set(40, 60, 80);
@@ -112,17 +125,13 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // --- 3. TRACKING LOGIC ---
     window.setTracking = (state) => {
         trackingState = state;
         document.querySelectorAll('.control-grid button').forEach(b => b.classList.remove('active-btn'));
         document.getElementById(`btn-${state.toLowerCase()}`).classList.add('active-btn');
-        if(state === 'STOP') {
-            document.getElementById('coords').innerText = "SYSTEM_IDLE";
-        }
     };
 
-    function plot(lat, lon, data, color, source) {
+    function plot(lat, lon, data, color, source, isLive = false) {
         if (!startCoords) startCoords = { lat, lon };
         const dy = (lat - startCoords.lat) * 111111;
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
@@ -130,9 +139,44 @@
         const mat = new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.2 });
         const node = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 16), mat);
         node.position.set(dx, 1.0, -dy);
-        node.userData = { ...data, source, color, transitioning: false };
+        node.userData = { ...data, source, color, transitioning: false, isLive };
         breadcrumbs.add(node);
     }
+
+    window.handleImport = async (e) => {
+        for (let file of e.target.files) {
+            const text = await file.text();
+            const color = PALETTE[colorIndex++ % PALETTE.length];
+            
+            const item = document.createElement('div');
+            item.className = 'legend-item';
+            item.innerHTML = `<div class="color-box" style="background: #${color.toString(16).padStart(6, '0')};"></div> ${file.name}`;
+            document.getElementById('legend-list').appendChild(item);
+
+            text.split('\n').slice(1).forEach(line => {
+                const p = line.split(',');
+                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, color, file.name, false);
+            });
+        }
+        document.getElementById('csv-upload').value = ""; 
+    };
+
+    // --- NEW WIPE FUNCTION ---
+    window.wipeImportedData = () => {
+        // Remove only imported (non-live) nodes
+        const toRemove = [];
+        breadcrumbs.children.forEach(node => {
+            if (!node.userData.isLive) toRemove.push(node);
+        });
+        toRemove.forEach(node => breadcrumbs.remove(node));
+        
+        // Clear Legend
+        document.getElementById('legend-list').innerHTML = "";
+        
+        // Hide popup if it belonged to a removed node
+        document.getElementById('node-popup').style.display = 'none';
+        zoomTarget = null;
+    };
 
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
@@ -143,23 +187,11 @@
             
             if (trackingState === 'START' && Date.now() - lastLoggedTime > 2000) {
                 lastLoggedTime = Date.now();
-                plot(lat, lon, { t: new Date().toLocaleTimeString(), lat, lon }, 0xff0055, "LIVE SESSION");
+                plot(lat, lon, { t: new Date().toLocaleTimeString(), lat, lon }, 0xff0055, "LIVE SESSION", true);
             }
         });
     }
 
-    window.handleImport = async (e) => {
-        for (let file of e.target.files) {
-            const text = await file.text();
-            const color = PALETTE[colorIndex++ % PALETTE.length];
-            text.split('\n').slice(1).forEach(line => {
-                const p = line.split(',');
-                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, color, file.name);
-            });
-        }
-    };
-
-    // --- 4. INTERACTION ---
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -178,7 +210,6 @@
             document.getElementById('pop-lon').innerText = `LON: ${parseFloat(node.userData.lon).toFixed(6)}`;
             zoomTarget = node.position.clone().add(new THREE.Vector3(12, 18, 18));
 
-            // Anime: Shrink + Wireframe
             if (!node.userData.transitioning) {
                 node.userData.transitioning = true;
                 node.material.wireframe = true;
@@ -194,7 +225,6 @@
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
         const t = Date.now() * 0.001;
-        
         sentry.position.y = 3.5 + Math.sin(t * 2.5) * 1.0;
         sentry.rotation.y += 0.01;
         const pulse = (Math.sin(t * 4) + 1) / 2;
