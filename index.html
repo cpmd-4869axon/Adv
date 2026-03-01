@@ -2,60 +2,57 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry OS | V65 Vector Flow</title>
+    <title>Sentry OS | V70 Aegis Prime</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
-        :root { --neon: #00ffcc; --warning: #ffcc00; --alert: #ff0055; --bg: #000c0c; }
+        :root { --neon: #00ffcc; --warning: #ffcc00; --alert: #ff0055; --bg: #000808; }
         body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; color: var(--neon); }
         
-        /* Tactical CRT Overlay */
+        /* Tactical Scanning Overlay */
         body::after {
             content: ""; position: absolute; top: 0; left: 0; width: 100%; height: 100%;
             background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.2) 50%), 
-                        linear-gradient(90deg, rgba(255, 0, 0, 0.03), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.03));
-            z-index: 1000; background-size: 100% 3px, 3px 100%; pointer-events: none;
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.02), rgba(0, 255, 0, 0.01), rgba(0, 0, 255, 0.02));
+            z-index: 1000; background-size: 100% 4px, 4px 100%; pointer-events: none;
         }
 
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
-        .panel { border: 1px solid var(--neon); backdrop-filter: blur(15px); background: rgba(0, 20, 20, 0.8); box-shadow: 0 0 20px rgba(0,255,204,0.1); }
-        #hud { position: absolute; top: 20px; left: 20px; padding: 20px; z-index: 100; width: 320px; border-top: 5px solid var(--neon); }
+        .panel { border: 1px solid var(--neon); backdrop-filter: blur(10px); background: rgba(0, 15, 15, 0.85); }
+        #hud { position: absolute; top: 20px; left: 20px; padding: 20px; z-index: 100; width: 340px; border-left: 8px solid var(--neon); }
         
-        #mini-map { position: absolute; bottom: 30px; right: 30px; width: 220px; height: 220px; z-index: 100; border: 2px solid var(--neon); border-radius: 50%; box-shadow: 0 0 30px rgba(0,255,204,0.3); }
+        #mini-map { position: absolute; bottom: 30px; right: 30px; width: 220px; height: 220px; z-index: 100; border: 2px solid var(--neon); border-radius: 12px; transform: rotate(-2deg); box-shadow: 0 0 20px var(--neon); }
 
-        .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin-top: 15px; }
-        button { background: #002222; color: var(--neon); border: 1px solid #006666; padding: 10px; cursor: pointer; font-family: inherit; font-size: 10px; font-weight: bold; clip-path: polygon(0 0, 90% 0, 100% 30%, 100% 100%, 10% 100%, 0 70%); transition: 0.3s; }
+        .btn-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 15px; }
+        button { background: #001a1a; color: var(--neon); border: 1px solid var(--neon); padding: 12px; cursor: pointer; font-family: inherit; font-size: 11px; font-weight: bold; transition: 0.2s; text-transform: uppercase; }
         button:hover { background: var(--neon); color: #000; }
-        .active-btn { background: var(--neon) !important; color: #000 !important; }
+        .active-btn { background: var(--neon) !important; color: #000 !important; box-shadow: 0 0 15px var(--neon); }
         
-        #compass { font-size: 40px; text-align: center; margin: 10px 0; color: var(--warning); text-shadow: 0 0 10px var(--warning); }
-        .telemetry { font-size: 10px; border-top: 1px solid #004444; padding-top: 10px; margin-top: 15px; display: flex; justify-content: space-between; }
+        #compass { font-size: 48px; text-align: center; margin: 10px 0; color: var(--warning); text-shadow: 0 0 15px var(--warning); font-weight: bold; }
+        .telemetry { font-size: 10px; border-top: 1px solid #004444; padding-top: 10px; margin-top: 10px; letter-spacing: 1px; }
     </style>
 </head>
 <body>
 
 <div id="hud" class="panel">
-    <div style="font-weight: bold; font-size: 18px; letter-spacing: 4px;">VECTOR_FLOW_V65</div>
-    <div id="sys-loc" style="font-size: 9px; color: #00aaaa;">UPLINK_READY: STABLE</div>
+    <div style="font-weight: bold; font-size: 22px; letter-spacing: 2px; color: white;">AEGIS_PRIME_V70</div>
+    <div id="sys-loc" style="font-size: 10px; color: var(--neon); margin-top: 4px;">UPLINK_STATUS: CONNECTED</div>
     
     <div id="compass">N</div>
     
     <div class="btn-grid">
-        <button id="btn-start" onclick="setTracking('START')">ENGAGE</button>
-        <button id="btn-pause" onclick="setTracking('PAUSE')">WAIT</button>
-        <button id="btn-stop" onclick="setTracking('STOP')" class="active-btn">KILL</button>
+        <button id="btn-start" onclick="setTracking('START')">Engage</button>
+        <button id="btn-pause" onclick="setTracking('PAUSE')">Hold</button>
+        <button id="btn-stop" onclick="setTracking('STOP')" class="active-btn">Halt</button>
     </div>
 
     <div class="telemetry">
-        <div>
-            TRAIL: <span id="node-count" style="color:white;">0</span>pts<br>
-            PITCH: <span id="cam-pitch" style="color:white;">45.0</span>
+        <div style="display:flex; justify-content: space-between;">
+            <span>VECTOR_PTS: <span id="node-count" style="color:white;">0</span></span>
+            <span>PITCH_LOCK: <span id="cam-pitch" style="color:white;">45.0</span>°</span>
         </div>
-        <div style="text-align: right;">
-            STATUS: <span id="sys-status" style="color:var(--neon);">IDLE</span><br>
-            LINK: <span style="color:var(--warning);">ENCRYPTED</span>
-        </div>
+        <div style="margin-top: 5px; color: #55aaaa;">SIG_STR: <span id="sig-str">98%</span> | LOAD: <span id="sys-load">4%</span></div>
     </div>
 </div>
 
@@ -81,7 +78,7 @@
     const targetCamPos = new THREE.Vector3();
     const targetLookAt = new THREE.Vector3();
 
-    // Map Engine Initialization
+    // Mapbox/MapLibre Engine
     const map = new maplibregl.Map({
         container: 'map-buffer',
         style: 'https://tiles.openfreemap.org/styles/dark',
@@ -94,48 +91,65 @@
     });
     map.on('idle', () => { mapLoaded = true; });
 
-    // Three.js Core
+    // Scene Setup
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000c0c, 0.0005);
-    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 15000);
-    camera.position.set(500, 500, 500);
+    scene.fog = new THREE.FogExp2(0x000808, 0.0006);
+    const camera = new THREE.PerspectiveCamera(50, window.innerWidth / window.innerHeight, 1, 12000);
+    camera.position.set(600, 600, 600);
 
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(window.devicePixelRatio);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
 
-    scene.add(new THREE.AmbientLight(0x00ffff, 0.4));
-    const pointLight = new THREE.PointLight(0x00ffcc, 500000, 2000);
-    pointLight.position.set(0, 500, 0);
-    scene.add(pointLight);
-    
-    const grid = new THREE.GridHelper(10000, 100, 0x003333, 0x001a1a);
+    scene.add(new THREE.AmbientLight(0x00ffff, 0.2));
+    const mainLight = new THREE.PointLight(0x00ffcc, 800000, 2500);
+    mainLight.position.set(0, 800, 0);
+    scene.add(mainLight);
+
+    // DUAL FLOOR SYSTEM
+    // 1. Base Mesh (Physical Ground)
+    const baseFloor = new THREE.Mesh(
+        new THREE.PlaneGeometry(10000, 10000),
+        new THREE.MeshStandardMaterial({ color: 0x000505, roughness: 0.8 })
+    );
+    baseFloor.rotation.x = -Math.PI / 2;
+    baseFloor.position.y = -2; // Slightly below map
+    scene.add(baseFloor);
+
+    // 2. Tactical Map Plane (Texture Overlay)
+    const mapTex = new THREE.CanvasTexture(map.getCanvas());
+    const tacticalPlane = new THREE.Mesh(
+        new THREE.PlaneGeometry(6000, 6000), 
+        new THREE.MeshStandardMaterial({ 
+            map: mapTex, 
+            transparent: true, 
+            opacity: 0.9,
+            emissive: 0x00ffcc,
+            emissiveIntensity: 0.05
+        })
+    );
+    tacticalPlane.rotation.x = -Math.PI / 2;
+    scene.add(tacticalPlane);
+
+    const grid = new THREE.GridHelper(10000, 80, 0x003333, 0x001a1a);
+    grid.position.y = -1;
     scene.add(grid);
 
-    const mapTex = new THREE.CanvasTexture(map.getCanvas());
-    const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(6000, 6000), 
-        new THREE.MeshStandardMaterial({ map: mapTex, roughness: 1, metalness: 0.2 })
-    );
-    floor.rotation.x = -Math.PI / 2;
-    scene.add(floor);
-
-    // Sentry Vessel
+    // Sentry Aegis Vessel
     const sentry = new THREE.Group();
-    const core = new THREE.Mesh(new THREE.OctahedronGeometry(12, 0), new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 2 }));
-    const ring = new THREE.Mesh(new THREE.TorusGeometry(18, 0.5, 16, 100), new THREE.MeshBasicMaterial({ color: 0x00ffcc, transparent: true, opacity: 0.5 }));
-    ring.rotation.x = Math.PI / 2;
-    sentry.add(core, ring);
-    sentry.position.y = 50;
+    const core = new THREE.Mesh(new THREE.OctahedronGeometry(15, 0), new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 3 }));
+    const shield = new THREE.Mesh(new THREE.IcosahedronGeometry(25, 1), new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true, transparent: true, opacity: 0.2 }));
+    sentry.add(core, shield);
+    sentry.position.y = 60;
     scene.add(sentry);
 
-    // Neural Trail Line
+    // Vector Path System
     const trailGeometry = new THREE.BufferGeometry();
-    const trailMaterial = new THREE.LineBasicMaterial({ color: 0xff0055, linewidth: 2 });
+    const trailMaterial = new THREE.LineDashedMaterial({ color: 0xff0055, dashSize: 10, gapSize: 5 });
     const trailLine = new THREE.Line(trailGeometry, trailMaterial);
     scene.add(trailLine);
 
@@ -144,31 +158,31 @@
         const z = -(lat - startCoords.lat) * 111111;
         const x = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
         
-        pathPoints.push(new THREE.Vector3(x, 2, z));
+        pathPoints.push(new THREE.Vector3(x, 5, z));
         trailGeometry.setFromPoints(pathPoints);
+        trailLine.computeLineDistances();
         
         sentry.position.set(x, sentry.position.y, z);
-        pointLight.position.set(x, 400, z);
+        mainLight.position.set(x, 600, z);
         miniMap.setCenter([lon, lat]);
         
         document.getElementById('node-count').innerText = pathPoints.length;
     }
 
-    // Interaction Logic
+    // Interactive Core Lock
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
         raycaster.setFromCamera(mouse, camera);
         if (raycaster.intersectObject(core).length > 0) {
             targetLookAt.set(sentry.position.x, 0, sentry.position.z);
-            targetCamPos.set(sentry.position.x + 400, 400, sentry.position.z + 400);
+            targetCamPos.set(sentry.position.x + 450, 450, sentry.position.z + 450);
             isTweening = true;
         }
     });
 
     window.setTracking = (state) => {
         trackingState = state;
-        document.getElementById('sys-status').innerText = state;
         document.querySelectorAll('button').forEach(b => b.classList.remove('active-btn'));
         document.getElementById(`btn-${state.toLowerCase()}`).classList.add('active-btn');
         if (state === 'START' && !trackingInterval) {
@@ -181,8 +195,9 @@
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
             lastPosition = { lat: pos.coords.latitude, lon: pos.coords.longitude };
-            document.getElementById('sys-loc').innerText = `SAT_LOCK: ${lastPosition.lat.toFixed(5)}, ${lastPosition.lon.toFixed(5)}`;
+            document.getElementById('sys-loc').innerText = `SAT_FIX: ${lastPosition.lat.toFixed(6)}, ${lastPosition.lon.toFixed(6)}`;
             map.setCenter([lastPosition.lon, lastPosition.lat]);
+            document.getElementById('sig-str').innerText = Math.floor(90 + Math.random() * 10) + "%";
         }, null, { enableHighAccuracy: true });
     }
 
@@ -190,13 +205,14 @@
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
         
-        sentry.rotation.y += 0.04;
-        ring.rotation.z -= 0.02;
-        sentry.position.y = 50 + Math.sin(Date.now() * 0.004) * 15;
+        sentry.rotation.y += 0.03;
+        shield.rotation.x -= 0.01;
+        sentry.position.y = 60 + Math.sin(Date.now() * 0.005) * 10;
+        document.getElementById('sys-load').innerText = Math.floor(Math.random() * 8) + "%";
 
         if (isTweening) {
-            camera.position.lerp(targetCamPos, 0.07);
-            controls.target.lerp(targetLookAt, 0.07);
+            camera.position.lerp(targetCamPos, 0.08);
+            controls.target.lerp(targetLookAt, 0.08);
             if (camera.position.distanceTo(targetCamPos) < 1) isTweening = false;
         }
         
