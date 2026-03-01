@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | V25 Expanded Data</title>
+    <title>Sentry Node | V26 Tactical</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -10,7 +10,7 @@
         #map-buffer { position: absolute; width: 1024px; height: 1024px; top: -9999px; visibility: hidden; }
         
         #hud { position: absolute; top: 20px; left: 20px; border: 1px solid #00ffcc; 
-               background: rgba(0,10,10,0.9); padding: 15px; z-index: 100; width: 260px; box-shadow: 0 0 10px rgba(0,255,204,0.2); }
+               background: rgba(0,10,10,0.92); padding: 15px; z-index: 100; width: 260px; box-shadow: 0 0 10px rgba(0,255,204,0.2); }
 
         #stream-hud {
             position: absolute; top: 20px; right: 20px; border: 1px solid #00ffcc;
@@ -18,12 +18,11 @@
         }
         .stream-val { color: #fff; font-weight: bold; float: right; }
 
-        /* FIXED: Data Sphere Detailed Popup */
         #node-popup { 
             position: absolute; display: none; background: rgba(0, 15, 15, 0.98); 
             border: 2px solid #00ffcc; padding: 15px; z-index: 200; 
             pointer-events: none; width: 240px; box-shadow: 0 0 20px rgba(0, 255, 204, 0.4);
-            clip-path: polygon(0 0, 100% 0, 100% 85%, 85% 100%, 0 100%); /* Tactical Corner */
+            clip-path: polygon(0 0, 100% 0, 100% 85%, 85% 100%, 0 100%);
         }
 
         .section-label { font-size: 10px; color: #008888; margin-top: 12px; border-bottom: 1px solid #004444; padding-bottom: 2px; text-transform: uppercase; }
@@ -41,7 +40,7 @@
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px; letter-spacing: 2px;">SENTRY_OS_V25</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px; letter-spacing: 2px;">SENTRY_OS_V26</div>
     <div id="coords" style="margin-top:10px; font-size: 10px; color: #008888;">SYS_LOC: PENDING...</div>
     
     <div class="section-label">TELEMETRY_ENGINE</div>
@@ -53,6 +52,8 @@
 
     <div class="section-label">ARCHIVE_TOOLS</div>
     <button onclick="exportToCSV()" style="border-color:#ffcc00; color:#ffcc00; margin-top:10px;">EXPORT LOG</button>
+    <input type="file" id="csv-import" accept=".csv" onchange="importCSV(event)" style="display:none">
+    <button onclick="document.getElementById('csv-import').click()" style="margin-top:5px;">IMPORT DATA</button>
 </div>
 
 <div id="stream-hud">
@@ -63,14 +64,11 @@
 
 <div id="node-popup">
     <div style="font-weight:bold; border-bottom:1px solid #00ffcc; margin-bottom:8px; font-size: 12px; color: #00ffcc;">NODE_TELEMETRY</div>
-    
     <div class="data-row"><span class="data-label">SOURCE:</span> <span id="pop-src" class="data-val">--</span></div>
     <div class="data-row"><span class="data-label">TIMESTAMP:</span> <span id="pop-time" class="data-val">--</span></div>
-    
     <div class="section-label">Spatial_Data</div>
     <div class="data-row"><span class="data-label">LATITUDE:</span> <span id="pop-lat" class="data-val">--</span></div>
     <div class="data-row"><span class="data-label">LONGITUDE:</span> <span id="pop-lon" class="data-val">--</span></div>
-    
     <div class="section-label">Vector_Context</div>
     <div class="data-row"><span class="data-label">X_COORD:</span> <span id="pop-x" class="data-val">--</span></div>
     <div class="data-row"><span class="data-label">Z_COORD:</span> <span id="pop-z" class="data-val">--</span></div>
@@ -128,7 +126,6 @@
     const breadcrumbs = new THREE.Group();
     scene.add(breadcrumbs);
 
-    // RESET VIEW: ZOOM, PAN, TILT
     window.resetCameraView = () => {
         const startPos = camera.position.clone();
         const endPos = sentry.position.clone().add(new THREE.Vector3(30, 50, 70));
@@ -146,6 +143,36 @@
             if (progress < 1) requestAnimationFrame(glide);
         }
         requestAnimationFrame(glide);
+    };
+
+    window.exportToCSV = () => {
+        if (window.sessionData.length === 0) return alert("NO DATA TO EXPORT.");
+        const csv = "t,lat,lon,src\n" + window.sessionData.map(d => `${d.t},${d.lat},${d.lon},${d.source}`).join("\n");
+        const link = document.createElement("a");
+        link.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+        link.download = `SENTRY_DATA_${Date.now()}.csv`;
+        link.click();
+    };
+
+    // FIXED: IMPROVED IMPORT LOGIC FOR ENHANCED DISPLAY
+    window.importCSV = (event) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const lines = e.target.result.split('\n').slice(1);
+            lines.forEach(line => {
+                const p = line.split(',');
+                if (p.length >= 3) {
+                    const data = { 
+                        t: p[0] || "IMPORTED", 
+                        lat: parseFloat(p[1]), 
+                        lon: parseFloat(p[2]), 
+                        source: p[3] || "CSV_IMPORT" 
+                    };
+                    plot(data.lat, data.lon, data, 0x00ccff); // Distinct blue color for imports
+                }
+            });
+        };
+        reader.readAsText(event.target.files[0]);
     };
 
     window.setTracking = (state) => {
@@ -181,7 +208,6 @@
         const node = new THREE.Mesh(new THREE.SphereGeometry(1.5, 16, 16), new THREE.MeshStandardMaterial({ color: color, emissive: color, emissiveIntensity: 0.4 }));
         node.position.set(dx, 1.5, -dy);
         
-        // STORE ENHANCED METADATA
         node.userData = { 
             t: data.t, 
             lat: lat.toFixed(7), 
@@ -215,7 +241,6 @@
             selectedNode.userData.targetScale = 2.8;
             selectedNode.material.color.set(0x00ffff);
 
-            // UPDATED POPUP CONTENT
             const popup = document.getElementById('node-popup');
             popup.style.display = 'block';
             popup.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + "px";
