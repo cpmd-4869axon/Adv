@@ -2,53 +2,55 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Aegis Matrix | V85 Advanced</title>
+    <title>Aegis Matrix | V90 Data Suite</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         :root { --neon: #00ffcc; --alert: #ff0055; --bg: #000808; }
-        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Segoe UI', monospace; }
+        body { margin: 0; background: var(--bg); overflow: hidden; font-family: 'Courier New', monospace; }
         
+        /* Tactical HUD */
         .hud-container {
             position: absolute; top: 20px; left: 20px; z-index: 1000;
-            padding: 20px; border-left: 4px solid var(--neon);
-            background: linear-gradient(90deg, rgba(0,20,20,0.9) 0%, transparent 100%);
-            color: var(--neon); text-transform: uppercase; pointer-events: none;
+            padding: 15px; border-left: 4px solid var(--neon);
+            background: rgba(0, 15, 15, 0.85); color: var(--neon); pointer-events: none;
         }
-        .glitch-text { font-size: 24px; font-weight: 900; letter-spacing: 5px; text-shadow: 2px 2px var(--alert); }
-        .stats-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 15px; font-size: 10px; opacity: 0.8; }
-        
-        /* Tactical Buttons */
-        .controls { position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%); z-index: 1000; display: flex; gap: 15px; }
+
+        /* Command Console */
+        .console {
+            position: absolute; bottom: 30px; left: 50%; transform: translateX(-50%);
+            z-index: 1000; display: flex; gap: 10px; background: rgba(0, 5, 5, 0.9);
+            padding: 10px; border: 1px solid #004444; border-radius: 5px;
+        }
         button { 
-            background: rgba(0, 255, 204, 0.1); border: 1px solid var(--neon); color: var(--neon); 
-            padding: 10px 20px; cursor: pointer; font-family: monospace; font-weight: bold;
-            transition: 0.3s; clip-path: polygon(10% 0, 100% 0, 90% 100%, 0% 100%);
+            background: #001515; border: 1px solid var(--neon); color: var(--neon); 
+            padding: 8px 15px; cursor: pointer; font-size: 10px; font-weight: bold;
+            transition: 0.2s; text-transform: uppercase;
         }
-        button:hover { background: var(--neon); color: #000; box-shadow: 0 0 20px var(--neon); }
+        button:hover { background: var(--neon); color: #000; }
+        .active { background: var(--alert) !important; color: white !important; border-color: white; }
 
         #map-engine { width: 1024px; height: 1024px; position: absolute; top: -9999px; }
+        #file-input { display: none; }
     </style>
 </head>
 <body>
 
 <div class="hud-container">
-    <div class="glitch-text">AEGIS_MATRIX_V85</div>
-    <div style="font-size: 9px; opacity: 0.6;">NEURAL_SURVEILLANCE_ACTIVE</div>
-    <div class="stats-grid">
-        <div>LAT: <span id="lat">0.00</span></div>
-        <div>LON: <span id="lon">0.00</span></div>
-        <div>DATA_SPHERE: <span style="color:white">ONLINE</span></div>
-        <div>ENCRYPTION: <span style="color:white">AES-256</span></div>
-    </div>
+    <div style="font-weight: 900; letter-spacing: 3px;">AEGIS_MATRIX_V90</div>
+    <div id="status-label" style="font-size: 10px; color: #aaa;">STATUS: IDLE</div>
+    <div style="font-size: 10px; margin-top: 5px;">NODES_IN_SPHERE: <span id="node-count">0</span></div>
 </div>
 
-<div class="controls">
-    <button onclick="toggleVisuals('SPHERE')">TOGGLE SPHERE</button>
-    <button onclick="toggleVisuals('GRID')">TOGGLE GRID</button>
-    <button onclick="resetCamera()">RE-CENTER</button>
+<div class="console">
+    <button id="btn-start" onclick="setControl('START')">Start</button>
+    <button id="btn-pause" onclick="setControl('PAUSE')">Pause</button>
+    <button id="btn-stop" onclick="setControl('STOP')">Stop</button>
+    <button onclick="document.getElementById('file-input').click()">Import CSV</button>
+    <button onclick="exportData()">Export</button>
 </div>
 
+<input type="file" id="file-input" accept=".csv" onchange="importCSV(event)">
 <div id="map-engine"></div>
 
 <script type="importmap">
@@ -58,104 +60,117 @@
 <script type="module">
     import * as THREE from 'three';
 
-    const clock = new THREE.Clock();
+    let state = 'STOP';
+    let dataPoints = [];
+    const sphereNodes = new THREE.Group();
+    
+    // --- THREE.JS SETUP ---
     const scene = new THREE.Scene();
-    scene.fog = new THREE.FogExp2(0x000808, 0.0005);
+    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 1, 15000);
+    camera.position.set(1200, 1200, 1200);
+    camera.lookAt(0,0,0);
 
-    const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 10000);
-    camera.position.set(0, 1200, 1200);
-    camera.lookAt(0, 0, 0);
-
-    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     document.body.appendChild(renderer.domElement);
 
-    // --- Advanced Leaflet Engine ---
-    const lMap = L.map('map-engine', { 
-        zoomControl: false, attributionControl: false, preferCanvas: true 
-    }).setView([26.2750, -81.6881], 18);
-
+    // --- LEAFLET 3x3 ENGINE ---
+    const lMap = L.map('map-engine', { zoomControl: false, attributionControl: false, preferCanvas: true }).setView([26.2750, -81.6881], 18);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png').addTo(lMap);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png').addTo(lMap);
 
     const mapCanvas = document.querySelector('#map-engine canvas');
     const mapTex = new THREE.CanvasTexture(mapCanvas);
-    mapTex.anisotropy = renderer.capabilities.getMaxAnisotropy();
 
-    // --- Tactical Components ---
+    // Limited 3x3 Projection Floor
     const floor = new THREE.Mesh(
-        new THREE.PlaneGeometry(5000, 5000),
+        new THREE.PlaneGeometry(3000, 3000), // Scaled to represent a tight 3x3 area
         new THREE.MeshBasicMaterial({ map: mapTex, transparent: true, opacity: 0.9 })
     );
     floor.rotation.x = -Math.PI / 2;
     scene.add(floor);
 
-    const grid = new THREE.GridHelper(5000, 3, 0x00ffcc, 0x002222);
-    grid.position.y = 2;
+    // Grid Visualizer (3 divisions for the 3x3 look)
+    const grid = new THREE.GridHelper(3000, 3, 0x00ffcc, 0x003333);
     scene.add(grid);
 
-    // --- DATA SPHERE ASSEMBLY ---
-    const sentryGroup = new THREE.Group();
-    
-    // Core Sentry
-    const core = new THREE.Mesh(
-        new THREE.OctahedronGeometry(40, 0),
-        new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true })
+    // --- DATA SPHERE ---
+    const dataSphere = new THREE.Group();
+    const sphereWire = new THREE.Mesh(
+        new THREE.SphereGeometry(200, 24, 24),
+        new THREE.MeshBasicMaterial({ color: 0x00ffcc, wireframe: true, transparent: true, opacity: 0.1 })
     );
+    dataSphere.add(sphereWire);
+    dataSphere.add(sphereNodes);
+    dataSphere.position.y = 200;
+    scene.add(dataSphere);
 
-    // Data Sphere (Neural Layer)
-    const sphereGeom = new THREE.SphereGeometry(150, 32, 32);
-    const sphereMat = new THREE.MeshBasicMaterial({ 
-        color: 0x00ffcc, wireframe: true, transparent: true, opacity: 0.1 
-    });
-    const dataSphere = new THREE.Mesh(sphereGeom, sphereMat);
-
-    sentryGroup.add(core, dataSphere);
-    sentryGroup.position.y = 150;
-    scene.add(sentryGroup);
-
-    // --- Interaction Logic ---
-    window.toggleVisuals = (type) => {
-        if(type === 'SPHERE') dataSphere.visible = !dataSphere.visible;
-        if(type === 'GRID') grid.visible = !grid.visible;
+    // --- CONTROL LOGIC ---
+    window.setControl = (cmd) => {
+        state = cmd;
+        document.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+        if(cmd !== 'EXPORT') document.getElementById(`btn-${cmd.toLowerCase()}`).classList.add('active');
+        document.getElementById('status-label').innerText = `STATUS: ${cmd}`;
     };
 
-    window.resetCamera = () => {
-        camera.position.set(0, 1200, 1200);
-        camera.lookAt(0, 0, 0);
+    // --- DATA HANDLING ---
+    function plotNode(lat, lon) {
+        dataPoints.push({ lat, lon, time: Date.now() });
+        
+        // Generate a 3D point inside the sphere
+        const dot = new THREE.Mesh(
+            new THREE.SphereGeometry(5, 8, 8),
+            new THREE.MeshBasicMaterial({ color: 0xff0055 })
+        );
+        dot.position.set(
+            (Math.random() - 0.5) * 150,
+            (Math.random() - 0.5) * 150,
+            (Math.random() - 0.5) * 150
+        );
+        sphereNodes.add(dot);
+        document.getElementById('node-count').innerText = dataPoints.length;
+        lMap.setView([lat, lon], 18);
+    }
+
+    window.importCSV = (event) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            const lines = e.target.result.split('\n');
+            lines.forEach(line => {
+                const [lat, lon] = line.split(',');
+                if(lat && lon) plotNode(parseFloat(lat), parseFloat(lon));
+            });
+            setControl('STOP');
+        };
+        reader.readAsText(event.target.files[0]);
     };
 
-    let targetPos = { lat: 26.2750, lon: -81.6881 };
+    window.exportData = () => {
+        const csv = dataPoints.map(p => `${p.lat},${p.lon},${p.time}`).join('\n');
+        const blob = new Blob([csv], { type: 'text/csv' });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `aegis_capture_${Date.now()}.csv`;
+        a.click();
+    };
+
+    // --- GPS TRACKING ---
     if (navigator.geolocation) {
         navigator.geolocation.watchPosition(pos => {
-            targetPos.lat = pos.coords.latitude;
-            targetPos.lon = pos.coords.longitude;
-            document.getElementById('lat').innerText = targetPos.lat.toFixed(4);
-            document.getElementById('lon').innerText = targetPos.lon.toFixed(4);
+            if(state === 'START') {
+                plotNode(pos.coords.latitude, pos.coords.longitude);
+            }
         });
     }
 
     function animate() {
         requestAnimationFrame(animate);
-        const delta = clock.getElapsedTime();
-
-        lMap.setView([targetPos.lat, targetPos.lon], 18);
         mapTex.needsUpdate = true;
-
-        sentryGroup.rotation.y += 0.01;
-        dataSphere.rotation.x += 0.005;
-        sentryGroup.position.y = 150 + Math.sin(delta * 2) * 25;
-
+        dataSphere.rotation.y += 0.005;
         renderer.render(scene, camera);
     }
     animate();
-
-    window.addEventListener('resize', () => {
-        camera.aspect = window.innerWidth / window.innerHeight;
-        camera.updateProjectionMatrix();
-        renderer.setSize(window.innerWidth, window.innerHeight);
-    });
 </script>
 </body>
 </html>
