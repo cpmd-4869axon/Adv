@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <title>Sentry Node | Wireframe Analysis</title>
+    <title>Sentry Node | Selective Transition</title>
     <script src="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.js"></script>
     <link href="https://unpkg.com/maplibre-gl@3.6.2/dist/maplibre-gl.css" rel="stylesheet" />
     <style>
@@ -12,12 +12,11 @@
         #hud { position: absolute; top: 20px; left: 20px; color: #00ffcc; border: 1px solid #00ffcc; 
                background: rgba(0,15,15,0.95); padding: 15px; z-index: 100; width: 260px; max-height: 85vh; overflow-y: auto; }
 
-        /* Larger Tactical Pop-up */
         #node-popup { 
             position: absolute; display: none; background: rgba(0, 30, 30, 0.95); 
             border: 2px solid #00ffcc; color: #00ffcc; padding: 18px; 
             z-index: 200; pointer-events: none; border-radius: 4px;
-            min-width: 220px; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
+            min-width: 240px; box-shadow: 0 0 20px rgba(0, 255, 204, 0.3);
         }
         #node-popup div { font-size: 14px; margin-bottom: 6px; line-height: 1.4; }
 
@@ -32,17 +31,16 @@
 <body>
 
 <div id="hud">
-    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V10</div>
+    <div style="font-weight: bold; border-bottom: 1px solid #00ffcc; padding-bottom: 5px; font-size: 16px;">SENTRY_OS_V11</div>
     <div id="coords" style="margin-top:10px; font-size: 12px;">ACQUIRING POS...</div>
     
     <div class="section-label">DATA UPLOAD</div>
     <input type="file" id="csv-upload" multiple accept=".csv" onchange="handleImport(event)">
-    <button onclick="exportToCSV()">EXPORT LIVE SESSION</button>
-
+    
     <div id="legend">
-        <div class="section-label">ACTIVE LAYERS</div>
+        <div class="section-label">SYSTEM KEYS</div>
         <div id="legend-list">
-            <div class="legend-item"><div class="color-box" style="background: #ff0055;"></div> LIVE_PATH (SOLID)</div>
+            <div class="legend-item"><div class="color-box" style="background: #ff0055;"></div> LIVE SESSION</div>
         </div>
     </div>
 </div>
@@ -73,7 +71,7 @@
     const mouse = new THREE.Vector2();
     let zoomTarget = null;
     let mapLoaded = false;
-    window.gpsHistory = [];
+    let animatedNodes = []; // Track nodes currently in transition
 
     const PALETTE = [0x00ffcc, 0xffff00, 0xff00ff, 0x00aaff, 0xff8800];
     let colorIndex = 0;
@@ -113,23 +111,21 @@
     scene.add(breadcrumbs);
 
     // --- 3. LOGIC ---
-    function plot(lat, lon, data, color, source, isWireframe = true) {
+    function plot(lat, lon, data, color, source) {
         if (!startCoords) startCoords = { lat, lon };
         const dy = (lat - startCoords.lat) * 111111;
         const dx = (lon - startCoords.lon) * 111111 * Math.cos(lat * Math.PI / 180);
         
         const mat = new THREE.MeshStandardMaterial({ 
             color: color, 
-            wireframe: isWireframe, 
+            wireframe: false, // Default to solid
             emissive: color, 
-            emissiveIntensity: isWireframe ? 0.5 : 0.2,
-            transparent: isWireframe,
-            opacity: isWireframe ? 0.6 : 1.0
+            emissiveIntensity: 0.2
         });
 
-        const node = new THREE.Mesh(new THREE.SphereGeometry(0.9, 12, 12), mat);
-        node.position.set(dx, 0.9, -dy);
-        node.userData = { ...data, source, color };
+        const node = new THREE.Mesh(new THREE.SphereGeometry(1.0, 16, 16), mat);
+        node.position.set(dx, 1.0, -dy);
+        node.userData = { ...data, source, color, transitioning: false };
         breadcrumbs.add(node);
     }
 
@@ -139,12 +135,12 @@
             const color = PALETTE[colorIndex++ % PALETTE.length];
             const item = document.createElement('div');
             item.className = 'legend-item';
-            item.innerHTML = `<div class="color-box" style="background: #${color.toString(16).padStart(6, '0')};"></div> ${file.name} (WF)`;
+            item.innerHTML = `<div class="color-box" style="background: #${color.toString(16).padStart(6, '0')};"></div> ${file.name}`;
             document.getElementById('legend-list').appendChild(item);
 
             text.split('\n').slice(1).forEach(line => {
                 const p = line.split(',');
-                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, color, file.name, true);
+                if (p.length >= 3) plot(parseFloat(p[1]), parseFloat(p[2]), { t: p[0], lat: p[1], lon: p[2] }, color, file.name);
             });
         }
     };
@@ -154,15 +150,14 @@
             const { latitude: lat, longitude: lon } = pos.coords;
             map.setCenter([lon, lat]);
             document.getElementById('coords').innerText = `LAT: ${lat.toFixed(6)} LON: ${lon.toFixed(6)}`;
-            if (Date.now() - lastLoggedTime > 1500) {
+            if (Date.now() - lastLoggedTime > 2000) {
                 lastLoggedTime = Date.now();
-                const d = { t: new Date().toLocaleTimeString(), lat, lon };
-                window.gpsHistory.push(d);
-                plot(lat, lon, d, 0xff0055, "LIVE SESSION", false); // Live is solid
+                plot(lat, lon, { t: new Date().toLocaleTimeString(), lat, lon }, 0xff0055, "LIVE SESSION");
             }
         });
     }
 
+    // --- 4. INTERACTION & ANIME ---
     window.addEventListener('mousedown', (e) => {
         mouse.x = (e.clientX / window.innerWidth) * 2 - 1;
         mouse.y = -(e.clientY / window.innerHeight) * 2 + 1;
@@ -171,42 +166,56 @@
         const pop = document.getElementById('node-popup');
 
         if (hits.length > 0) {
-            const d = hits[0].object.userData;
+            const node = hits[0].object;
+            const d = node.userData;
+            
             pop.style.display = 'block';
-            pop.style.left = Math.min(e.clientX + 20, window.innerWidth - 250) + 'px';
-            pop.style.top = Math.min(e.clientY + 20, window.innerHeight - 200) + 'px';
+            pop.style.left = Math.min(e.clientX + 20, window.innerWidth - 260) + 'px';
+            pop.style.top = Math.min(e.clientY + 20, window.innerHeight - 220) + 'px';
             document.getElementById('pop-src').innerText = `SRC: ${d.source}`;
             document.getElementById('pop-time').innerText = `TIME: ${d.t}`;
             document.getElementById('pop-lat').innerText = `LAT: ${parseFloat(d.lat).toFixed(6)}`;
             document.getElementById('pop-lon').innerText = `LON: ${parseFloat(d.lon).toFixed(6)}`;
-            zoomTarget = hits[0].object.position.clone().add(new THREE.Vector3(10, 15, 15));
+            
+            zoomTarget = node.position.clone().add(new THREE.Vector3(12, 18, 18));
+
+            // Trigger Transition Anime
+            if (!node.userData.transitioning) {
+                node.userData.transitioning = true;
+                node.material.wireframe = true;
+                node.material.emissiveIntensity = 0.8;
+                animatedNodes.push(node);
+            }
         } else {
             pop.style.display = 'none';
             zoomTarget = null;
         }
     });
 
-    window.exportToCSV = () => {
-        let csv = "Time,Lat,Lon\n" + window.gpsHistory.map(h => `${h.t},${h.lat},${h.lon}`).join("\n");
-        const a = document.createElement('a');
-        a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
-        a.download = `sentry_live_${Date.now()}.csv`;
-        a.click();
-    };
-
     function animate() {
         requestAnimationFrame(animate);
         if (mapLoaded) mapTex.needsUpdate = true;
         const t = Date.now() * 0.001;
+        
         sentry.position.y = 3.5 + Math.sin(t * 2.5) * 1.0;
         sentry.rotation.y += 0.01;
         const pulse = (Math.sin(t * 4) + 1) / 2;
         ring.scale.set(0.5 + pulse * 2.5, 0.5 + pulse * 2.5, 1);
         ring.material.opacity = 1 - pulse;
 
+        // Process Node Animations (Contracting)
+        animatedNodes.forEach((node, index) => {
+            if (node.scale.x > 0.6) {
+                const s = node.scale.x - 0.02;
+                node.scale.set(s, s, s);
+            } else {
+                animatedNodes.splice(index, 1); // Finished contracting
+            }
+        });
+
         if (zoomTarget) {
             camera.position.lerp(zoomTarget, 0.07);
-            controls.target.lerp(zoomTarget.clone().sub(new THREE.Vector3(10,15,15)), 0.07);
+            controls.target.lerp(zoomTarget.clone().sub(new THREE.Vector3(12,18,18)), 0.07);
         }
         controls.update();
         renderer.render(scene, camera);
